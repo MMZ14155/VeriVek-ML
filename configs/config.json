@@ -1,0 +1,20 @@
+{
+    "verbose": true,
+    "database": {
+        "host": "localhost",
+        "port": 5432,
+        "dbname": "verivek",
+        "user": "postgres",
+        "password": "admin"
+    },
+    "minio": {
+        "timeout": 30,
+        "endpoint_url": "http://localhost:9000",
+        "buckets": {
+            "models": "verivek-models",
+            "datasets": "verivek-datasets"
+        },
+        "access_key": "minioadmin",
+        "secret_key": "minioadmin"
+    }
+}
