@@ -12,7 +12,8 @@
         "endpoint_url": "http://localhost:9000",
         "buckets": {
             "models": "verivek-models",
-            "datasets": "verivek-datasets"
+            "datasets": "verivek-datasets",
+            "weights": "verivek-weights"
         },
         "access_key": "minioadmin",
         "secret_key": "minioadmin"

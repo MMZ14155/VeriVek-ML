@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VeriVek</title>
+    <!-- 外部 CSS -->
+    <link rel="stylesheet" href="static/css/style.css">
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+</head>
+<body class="font-sans antialiased overflow-hidden">
+
+    <!-- 顶部导航栏 -->
+    <nav class="glass-panel fixed w-full z-50 h-16 flex items-center justify-between px-6 border-b border-white/5">
+        <div class="flex items-center space-x-3">
+            <div class="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center font-bold text-white">V</div>
+            <span class="text-xl font-semibold tracking-tight">Veri<span class="text-indigo-400">Vek</span></span>
+            <span class="px-2 py-0.5 text-xs bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/30">v2.0</span>
+        </div>
+
+        <div class="flex items-center space-x-6">
+            <div class="flex items-center space-x-2 text-sm text-gray-400">
+                <span class="w-2 h-2 bg-emerald-500 rounded-full status-dot"></span>
+                <span>Core 连接正常</span>
+            </div>
+            <button class="p-2 hover:bg-white/5 rounded-lg transition-colors">
+                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+            </button>
+            <div class="w-8 h-8 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-sm font-medium">A</div>
+        </div>
+    </nav>
+
+    <!-- 侧边栏与主内容区 -->
+    <div class="flex pt-16 h-screen">
+        <!-- 侧边栏导航 -->
+        <aside class="w-64 glass-panel border-r border-white/5 flex flex-col">
+            <div class="p-4 space-y-1">
+                <button onclick="switchTab('dashboard')" id="nav-dashboard" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 tab-active group">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                    <span class="font-medium">仪表板</span>
+                </button>
+
+                <button onclick="switchTab('datasets')" id="nav-datasets" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-white/5 text-gray-400 hover:text-white group">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    <span class="font-medium">数据集</span>
+                    <span class="ml-auto text-xs bg-white/10 px-2 py-0.5 rounded-full">12</span>
+                </button>
+
+                <button onclick="switchTab('models')" id="nav-models" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-white/5 text-gray-400 hover:text-white group">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                    <span class="font-medium">模型</span>
+                    <span class="ml-auto text-xs bg-white/10 px-2 py-0.5 rounded-full">8</span>
+                </button>
+
+                <button onclick="switchTab('training')" id="nav-training" class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-white/5 text-gray-400 hover:text-white group">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    <span class="font-medium">训练控制</span>
+                    <span id="training-badge" class="ml-auto w-2 h-2 bg-emerald-500 rounded-full hidden status-dot"></span>
+                </button>
+            </div>
+
+            <div class="mt-auto p-4 border-t border-white/5">
+                <!-- 侧边栏底部系统状态 -->
+                <div class="glass-panel rounded-xl p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs text-gray-400">系统状态</span>
+                        <span class="text-xs text-emerald-400">正常</span>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-gray-500">GPU 显存</span>
+                            <span id="gpu-memory-text" class="text-white">-- / -- GB</span>
+                        </div>
+                        <div class="w-full bg-gray-800 rounded-full h-1.5">
+                            <div id="gpu-memory-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区域 -->
+        <main class="flex-1 overflow-y-auto bg-gradient-to-br from-verivek-dark to-[#0f0f1a] p-8">
+
+            <!-- 仪表板页面 - 重构版：聚焦实时操作与系统状态 -->
+            <div id="page-dashboard" class="fade-in space-y-6">
+                <!-- 页面头部 -->
+                <div class="flex justify-between items-end mb-6">
+                    <div>
+                        <h1 class="text-3xl font-bold mb-1">训练概览</h1>
+                        <p class="text-gray-400 text-sm">系统状态监控与任务管理</p>
+                    </div>
+                    <button onclick="switchTab('training')" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-all neon-glow flex items-center space-x-2 text-sm">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                        <span>新建训练任务</span>
+                    </button>
+                </div>
+
+                <!-- 第一行：核心系统指标（3列，关键决策信息） -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <!-- 指标 1：活跃训练（核心操作指标） -->
+                    <div class="metric-card rounded-xl p-5 relative overflow-hidden border-l-4 border-indigo-500">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-gray-400 text-sm font-medium">活跃训练任务</span>
+                            <span class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+                                <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            </span>
+                        </div>
+                        <div class="flex items-baseline space-x-2">
+                            <div class="text-3xl font-bold">3</div>
+                            <span class="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">运行正常</span>
+                        </div>
+                        <div class="mt-2 text-xs text-gray-500">2个高优先级 • 1个后台任务</div>
+                    </div>
+
+                    <!-- 指标 2：GPU 利用率（资源监控核心） -->
+                    <div class="metric-card rounded-xl p-5 relative overflow-hidden border-l-4 border-orange-500">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-gray-400 text-sm font-medium">GPU 利用率</span>
+                            <span class="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                                <svg class="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                            </span>
+                        </div>
+                        <div class="flex items-baseline space-x-2">
+                            <div class="text-3xl font-bold" id="dashboard-gpu-percent">78%</div>
+                            <span class="text-xs text-orange-400">2个任务运行中</span>
+                        </div>
+                        <div class="mt-3 w-full bg-gray-800 rounded-full h-1.5">
+                            <div class="bg-orange-500 h-1.5 rounded-full" style="width: 78%"></div>
+                        </div>
+                    </div>
+
+                    <!-- 指标 3：显存使用（关键资源瓶颈指标） -->
+                    <div class="metric-card rounded-xl p-5 relative overflow-hidden border-l-4 border-purple-500">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-gray-400 text-sm font-medium">显存占用</span>
+                            <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                                <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                            </span>
+                        </div>
+                        <div class="flex items-baseline space-x-2">
+                            <div class="text-3xl font-bold" id="dashboard-vram-text">10.2<span class="text-lg text-gray-500">/16 GB</span></div>
+                            <span class="text-xs text-purple-400">剩余 5.8 GB</span>
+                        </div>
+                        <div class="mt-3 w-full bg-gray-800 rounded-full h-1.5">
+                            <div class="bg-purple-500 h-1.5 rounded-full" style="width: 64%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 第二行：系统告警区域（新增，折叠式，无告警时自动收缩） -->
+                <div id="alert-banner" class="hidden bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-center space-x-3">
+                    <svg class="w-5 h-5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <div class="flex-1">
+                        <span class="text-red-400 font-medium text-sm">检测到异常：</span>
+                        <span class="text-gray-300 text-sm">Vision Transformer 任务 Loss 连续3个epoch未下降，建议检查学习率</span>
+                    </div>
+                    <button class="text-xs text-gray-400 hover:text-white underline">查看详情</button>
+                    <button onclick="document.getElementById('alert-banner').classList.add('hidden')" class="text-gray-500 hover:text-gray-300">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+
+                <!-- 第三行：进行中的任务（主要视觉区域，占据全宽） -->
+                <div class="glass-panel rounded-2xl p-6 border border-white/10">
+                    <div class="flex items-center justify-between mb-5">
+                        <h3 class="text-lg font-semibold flex items-center">
+                            <span class="w-2 h-2 bg-emerald-500 rounded-full mr-2 status-dot"></span>
+                            进行中的训练任务
+                        </h3>
+                        <div class="flex space-x-2">
+                            <button class="px-3 py-1.5 text-xs bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-gray-400">全部暂停</button>
+                            <button class="px-3 py-1.5 text-xs bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-gray-400">批量操作</button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3" id="active-tasks-list">
+                        <!-- 任务 1：高优先级/主要任务 -->
+                        <div class="flex items-center p-4 bg-white/5 rounded-xl border border-white/5 hover:border-indigo-500/30 transition-all group">
+                            <div class="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center mr-4 flex-shrink-0">
+                                <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center justify-between mb-1">
+                                    <div class="flex items-center space-x-2">
+                                        <h4 class="font-medium text-sm truncate">GPT-2 Fine-tuning</h4>
+                                        <span class="px-1.5 py-0.5 text-[10px] bg-indigo-500/20 text-indigo-300 rounded border border-indigo-500/30">Epoch 5/20</span>
+                                    </div>
+                                    <span class="text-xs text-gray-400 font-mono">剩余 2h 15m</span>
+                                </div>
+                                <div class="flex items-center space-x-4 text-xs text-gray-400 mb-2">
+                                    <span>Loss: <span class="text-white font-mono">2.34</span></span>
+                                    <span>LR: <span class="text-white font-mono">1e-4</span></span>
+                                    <span>Batch: <span class="text-white font-mono">64</span></span>
+                                </div>
+                                <div class="w-full bg-gray-800 rounded-full h-1.5">
+                                    <div class="bg-gradient-to-r from-indigo-500 to-purple-500 h-1.5 rounded-full transition-all duration-500" style="width: 25%"></div>
+                                </div>
+                            </div>
+                            <div class="ml-4 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-400" title="暂停">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </button>
+                                <button class="p-2 hover:bg-red-500/20 rounded-lg transition-colors text-gray-400 hover:text-red-400" title="停止">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 任务 2 -->
+                        <div class="flex items-center p-4 bg-white/5 rounded-xl border border-white/5 hover:border-purple-500/30 transition-all group">
+                            <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center mr-4 flex-shrink-0">
+                                <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center justify-between mb-1">
+                                    <div class="flex items-center space-x-2">
+                                        <h4 class="font-medium text-sm truncate">Vision Transformer</h4>
+                                        <span class="px-1.5 py-0.5 text-[10px] bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">Epoch 12/50</span>
+                                    </div>
+                                    <span class="text-xs text-gray-400 font-mono">剩余 5h 30m</span>
+                                </div>
+                                <div class="flex items-center space-x-4 text-xs text-gray-400 mb-2">
+                                    <span>Loss: <span class="text-white font-mono">0.89</span></span>
+                                    <span>Acc: <span class="text-emerald-400 font-mono">87.3%</span></span>
+                                    <span>GPU: <span class="text-orange-400 font-mono">45%</span></span>
+                                </div>
+                                <div class="w-full bg-gray-800 rounded-full h-1.5">
+                                    <div class="bg-gradient-to-r from-purple-500 to-pink-500 h-1.5 rounded-full transition-all duration-500" style="width: 24%"></div>
+                                </div>
+                            </div>
+                            <div class="ml-4 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-400" title="暂停">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </button>
+                                <button class="p-2 hover:bg-red-500/20 rounded-lg transition-colors text-gray-400 hover:text-red-400" title="停止">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 任务 3：后台/低优先级任务（折叠状态示例） -->
+                        <div class="flex items-center p-3 bg-white/[0.02] rounded-xl border border-white/5 opacity-75 hover:opacity-100 transition-opacity">
+                            <div class="w-8 h-8 rounded-lg bg-gray-500/20 flex items-center justify-center mr-3 flex-shrink-0">
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path></svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center justify-between mb-0.5">
+                                    <h4 class="font-medium text-sm text-gray-400 truncate">数据预处理 - ImageNet 验证集</h4>
+                                    <span class="text-xs text-gray-500">后台任务</span>
+                                </div>
+                                <div class="w-full bg-gray-800/50 rounded-full h-1">
+                                    <div class="bg-gray-500 h-1 rounded-full" style="width: 65%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 第四行：次要信息（趋势图 + 最近活动） -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- 左侧 2/3：训练趋势图（保留但弱化标题） -->
+                    <div class="lg:col-span-2 glass-panel rounded-2xl p-6 border border-white/5">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-medium text-gray-400">训练趋势（最近7天）</h3>
+                            <select class="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 text-gray-400">
+                                <option>7天</option>
+                                <option>30天</option>
+                            </select>
+                        </div>
+                        <div class="h-48 w-full">
+                            <canvas id="trainingChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 右侧 1/3：精简的最近活动（仅2条关键信息） -->
+                    <div class="glass-panel rounded-2xl p-6 border border-white/5 flex flex-col">
+                        <h3 class="text-sm font-medium text-gray-400 mb-4">最近动态</h3>
+                        <div class="space-y-3 flex-1">
+                            <!-- 仅保留需要关注的最近事件 -->
+                            <div class="flex items-start space-x-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                                <div class="w-2 h-2 mt-1.5 rounded-full bg-emerald-500 flex-shrink-0"></div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm font-medium text-gray-200 truncate">ResNet-50 训练完成</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">准确率 96.4% • 2分钟前</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start space-x-3 p-3 rounded-lg bg-indigo-500/5 border border-indigo-500/10">
+                                <div class="w-2 h-2 mt-1.5 rounded-full bg-indigo-500 flex-shrink-0"></div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm font-medium text-gray-200 truncate">BERT-Large 开始训练</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Epoch 3/10 • 15分钟前</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 快速操作按钮 -->
+                        <div class="mt-4 pt-4 border-t border-white/5 grid grid-cols-2 gap-2">
+                            <button onclick="switchTab('datasets')" class="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-gray-400 transition-colors text-center">
+                                管理数据集
+                            </button>
+                            <button onclick="switchTab('models')" class="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-gray-400 transition-colors text-center">
+                                查看模型
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 第五行：今日统计（弱化展示，小字） -->
+                <div class="flex items-center justify-between px-2 py-3 text-xs text-gray-500 border-t border-white/5 mt-6">
+                    <div class="flex space-x-6">
+                        <span>今日完成: <strong class="text-gray-300">3</strong> 个任务</span>
+                        <span>平均耗时: <strong class="text-gray-300">1.4h</strong></span>
+                        <span>成功率: <strong class="text-emerald-400">100%</strong></span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full status-dot"></span>
+                        <span>系统正常运行 14 天</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 数据集页面 -->
+            <div id="page-datasets" class="hidden fade-in space-y-6">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h1 class="text-3xl font-bold mb-2">数据集管理</h1>
+                        <p class="text-gray-400">管理和预处理训练数据</p>
+                    </div>
+                    <button class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-all flex items-center space-x-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        <span>上传数据集</span>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- 数据集卡片 1 -->
+                    <div class="glass-panel rounded-2xl p-6 hover:border-indigo-500/50 transition-all cursor-pointer group">
+                        <div class="flex items-start justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center">
+                                <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            </div>
+                            <span class="px-2 py-1 bg-emerald-500/20 text-emerald-400 text-xs rounded-full border border-emerald-500/30">已就绪</span>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 group-hover:text-indigo-400 transition-colors">CIFAR-10</h3>
+                        <p class="text-sm text-gray-400 mb-4">经典图像分类数据集，包含10个类别的60000张32x32彩色图像</p>
+                        <div class="flex items-center justify-between text-sm text-gray-500 border-t border-white/5 pt-4">
+                            <span>60,000 样本</span>
+                            <span>163 MB</span>
+                        </div>
+                    </div>
+
+                    <!-- 数据集卡片 2 -->
+                    <div class="glass-panel rounded-2xl p-6 hover:border-indigo-500/50 transition-all cursor-pointer group">
+                        <div class="flex items-start justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                                <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+                            </div>
+                            <span class="px-2 py-1 bg-emerald-500/20 text-emerald-400 text-xs rounded-full border border-emerald-500/30">已就绪</span>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 group-hover:text-indigo-400 transition-colors">IMDB Reviews</h3>
+                        <p class="text-sm text-gray-400 mb-4">用于情感分析的50000条电影评论，二分类问题</p>
+                        <div class="flex items-center justify-between text-sm text-gray-500 border-t border-white/5 pt-4">
+                            <span>50,000 样本</span>
+                            <span>80 MB</span>
+                        </div>
+                    </div>
+
+                    <!-- 数据集卡片 3 -->
+                    <div class="glass-panel rounded-2xl p-6 hover:border-indigo-500/50 transition-all cursor-pointer group">
+                        <div class="flex items-start justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-orange-500/20 flex items-center justify-center">
+                                <svg class="w-6 h-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </div>
+                            <span class="px-2 py-1 bg-orange-500/20 text-orange-400 text-xs rounded-full border border-orange-500/30">处理中</span>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 group-hover:text-indigo-400 transition-colors">Custom Object Detection</h3>
+                        <p class="text-sm text-gray-400 mb-4">自定义目标检测数据集，包含标注的边界框信息</p>
+                        <div class="flex items-center justify-between text-sm text-gray-500 border-t border-white/5 pt-4">
+                            <div class="flex items-center space-x-2">
+                                <div class="w-16 bg-gray-800 rounded-full h-1.5">
+                                    <div class="bg-orange-500 h-1.5 rounded-full" style="width: 65%"></div>
+                                </div>
+                                <span>65%</span>
+                            </div>
+                            <span>1.2 GB</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 模型页面 -->
+            <div id="page-models" class="hidden fade-in space-y-6">
+                <!-- 页面头部 -->
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h1 class="text-3xl font-bold mb-2">模型仓库</h1>
+                        <p class="text-gray-400">预训练模型与自定义架构管理</p>
+                    </div>
+                    <div class="flex space-x-3">
+                        <!-- 导入模型按钮 -->
+                        <button onclick="openImportModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-medium transition-all border border-emerald-500/30 flex items-center space-x-2 neon-glow">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                            </svg>
+                            <span>导入模型</span>
+                        </button>
+                        <button class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-all">
+                            新建架构
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 模型列表 -->
+                <div class="glass-panel rounded-2xl overflow-hidden">
+                    <div class="p-6 border-b border-white/5">
+                        <div class="flex space-x-6 text-sm">
+                            <button class="text-white font-medium border-b-2 border-indigo-500 pb-2">全部模型</button>
+                            <button class="text-gray-400 hover:text-white transition-colors pb-2">计算机视觉</button>
+                            <button class="text-gray-400 hover:text-white transition-colors pb-2">自然语言处理</button>
+                            <button class="text-gray-400 hover:text-white transition-colors pb-2">自定义</button>
+                        </div>
+                    </div>
+
+                    <div class="divide-y divide-white/5" id="model-list-container">
+                        <!-- 加载状态 -->
+                        <div class="p-8 text-center text-gray-500" id="model-list-loading">
+                            <svg class="animate-spin w-8 h-8 mx-auto mb-2 text-indigo-500" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <p>加载模型列表...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 模型导入模态框 -->
+                <div id="import-modal" class="fixed inset-0 z-[100] hidden">
+                    <!-- 背景遮罩 -->
+                    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onclick="closeImportModal()"></div>
+
+                    <!-- 模态框内容 -->
+                    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl p-4">
+                        <div class="glass-panel rounded-2xl p-8 border border-white/10 shadow-2xl relative bg-[#13131f]/95">
+                            <!-- 关闭按钮 -->
+                            <button onclick="closeImportModal()" class="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-white">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+
+                            <h2 class="text-2xl font-bold mb-6 pr-8">导入模型</h2>
+
+                            <form id="import-model-form" onsubmit="handleModelImport(event)">
+                                <div class="space-y-6">
+                                    <!-- 文件上传区域 -->
+                                    <div id="drop-zone" class="border-2 border-dashed border-white/20 rounded-xl p-8 text-center hover:border-indigo-500/50 hover:bg-white/5 transition-all cursor-pointer relative group">
+                                        <input type="file" id="model-file" name="model_file" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept=".py" required>
+
+                                        <!-- 未选择文件状态 -->
+                                        <div id="upload-prompt" class="pointer-events-none transition-opacity duration-300">
+                                            <div class="w-16 h-16 rounded-full bg-indigo-500/10 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                                                <svg class="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                                </svg>
+                                            </div>
+                                            <p class="text-lg font-medium text-gray-300 mb-2">拖拽文件到此处或点击上传</p>
+                                            <p class="text-sm text-gray-500">支持 .py 格式</p>
+                                        </div>
+
+                                        <!-- 已选择文件状态 -->
+                                        <div id="file-selected" class="hidden pointer-events-none">
+                                            <div class="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
+                                                <svg class="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                </svg>
+                                            </div>
+                                            <p id="selected-filename" class="text-lg font-medium text-emerald-400 mb-2 break-all"></p>
+                                            <p class="text-sm text-gray-400">点击或拖拽更换文件</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- 模型信息表单 -->
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div class="space-y-2">
+                                            <label class="block text-sm text-gray-400">模型名称 <span class="text-red-400">*</span></label>
+                                            <input type="text" id="import-model-name" name="model_name" required
+                                                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 transition-colors text-white placeholder-gray-600"
+                                                placeholder="例如：ResNet-50-v2">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="block text-sm text-gray-400">分支名称</label>
+                                            <input type="text" id="import-branch-name" name="branch_name" value="main"
+                                                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 transition-colors text-white"
+                                                placeholder="main">
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <label class="block text-sm text-gray-400">描述</label>
+                                        <textarea id="import-description" name="description" rows="3"
+                                            class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 transition-colors text-white resize-none placeholder-gray-600"
+                                            placeholder="模型描述信息、使用场景说明..."></textarea>
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div class="space-y-2">
+                                            <label class="block text-sm text-gray-400">标签（用逗号分隔）</label>
+                                            <input type="text" id="import-tags" name="tags"
+                                                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 transition-colors text-white placeholder-gray-600"
+                                                placeholder="CV, classification, pretrained...">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="block text-sm text-gray-400">版本备注</label>
+                                            <input type="text" id="import-message" name="message" value="Initial import"
+                                                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 transition-colors text-white"
+                                                placeholder="Initial commit">
+                                        </div>
+                                    </div>
+
+                                    <!-- 上传进度条（默认隐藏） -->
+                                    <div id="upload-progress-container" class="hidden space-y-2">
+                                        <div class="flex justify-between text-sm">
+                                            <span class="text-gray-400">上传进度</span>
+                                            <span id="upload-percentage" class="text-indigo-400 font-mono">0%</span>
+                                        </div>
+                                        <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden">
+                                            <div id="upload-progress-bar" class="bg-gradient-to-r from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 操作按钮 -->
+                                    <div class="flex justify-end space-x-3 pt-4 border-t border-white/5">
+                                        <button type="button" onclick="closeImportModal()"
+                                            class="px-6 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-medium transition-colors border border-white/10 text-gray-300">
+                                            取消
+                                        </button>
+                                        <button type="submit" id="import-submit-btn"
+                                            class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-all flex items-center space-x-2 shadow-lg shadow-indigo-500/25">
+                                            <span>开始导入</span>
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 训练控制页面 -->
+            <div id="page-training" class="hidden fade-in space-y-6">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h1 class="text-3xl font-bold mb-2">训练配置</h1>
+                        <p class="text-gray-400">配置超参数并启动训练任务</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- 左侧：选择与配置 -->
+                    <div class="lg:col-span-2 space-y-6">
+                        <!-- 数据集选择 -->
+                        <div class="glass-panel rounded-2xl p-6">
+                            <h3 class="text-lg font-semibold mb-4 flex items-center">
+                                <span class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm mr-2">1</span>
+                                选择数据集
+                            </h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="p-4 rounded-xl border-2 border-indigo-500 bg-indigo-500/10 cursor-pointer transition-all">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="font-medium">CIFAR-10</span>
+                                        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                    </div>
+                                    <p class="text-xs text-gray-400">60,000 样本 • 图像分类</p>
+                                </div>
+                                <div class="p-4 rounded-xl border border-white/10 hover:border-white/30 cursor-pointer transition-all">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="font-medium">IMDB Reviews</span>
+                                    </div>
+                                    <p class="text-xs text-gray-400">50,000 样本 • 情感分析</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 模型选择 -->
+                        <div class="glass-panel rounded-2xl p-6">
+                            <h3 class="text-lg font-semibold mb-4 flex items-center">
+                                <span class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm mr-2">2</span>
+                                选择模型
+                            </h3>
+                            <div class="grid grid-cols-3 gap-4">
+                                <div class="p-4 rounded-xl border border-white/10 hover:border-indigo-500/50 cursor-pointer transition-all">
+                                    <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mb-2">
+                                        <span class="text-xs font-bold text-indigo-400">R18</span>
+                                    </div>
+                                    <div class="text-sm font-medium">ResNet-18</div>
+                                    <div class="text-xs text-gray-400 mt-1">轻量级</div>
+                                </div>
+                                <div class="p-4 rounded-xl border-2 border-indigo-500 bg-indigo-500/10 cursor-pointer transition-all relative">
+                                    <div class="absolute top-2 right-2">
+                                        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                    </div>
+                                    <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mb-2">
+                                        <span class="text-xs font-bold text-indigo-400">R50</span>
+                                    </div>
+                                    <div class="text-sm font-medium">ResNet-50</div>
+                                    <div class="text-xs text-gray-400 mt-1">平衡型</div>
+                                </div>
+                                <div class="p-4 rounded-xl border border-white/10 hover:border-indigo-500/50 cursor-pointer transition-all">
+                                    <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mb-2">
+                                        <span class="text-xs font-bold text-indigo-400">R101</span>
+                                    </div>
+                                    <div class="text-sm font-medium">ResNet-101</div>
+                                    <div class="text-xs text-gray-400 mt-1">高精度</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 超参数配置 -->
+                        <div class="glass-panel rounded-2xl p-6">
+                            <h3 class="text-lg font-semibold mb-4 flex items-center">
+                                <span class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm mr-2">3</span>
+                                超参数配置
+                            </h3>
+                            <div class="grid grid-cols-2 gap-6">
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">学习率 (Learning Rate)</label>
+                                    <input type="number" value="0.001" step="0.0001" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">批次大小 (Batch Size)</label>
+                                    <select class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
+                                        <option>32</option>
+                                        <option selected>64</option>
+                                        <option>128</option>
+                                        <option>256</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">训练轮数 (Epochs)</label>
+                                    <input type="number" value="50" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">优化器</label>
+                                    <select class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
+                                        <option selected>Adam</option>
+                                        <option>SGD</option>
+                                        <option>AdamW</option>
+                                        <option>RMSprop</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">权重衰减 (Weight Decay)</label>
+                                    <input type="number" value="0.0001" step="0.0001" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-2">学习率调度</label>
+                                    <select class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
+                                        <option>固定</option>
+                                        <option selected>余弦退火</option>
+                                        <option>步进衰减</option>
+                                        <option>指数衰减</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 右侧：摘要与启动 -->
+                    <div class="space-y-6">
+                        <div class="glass-panel rounded-2xl p-6 sticky top-6">
+                            <h3 class="text-lg font-semibold mb-6">训练摘要</h3>
+
+                            <div class="space-y-4 mb-6">
+                                <div class="flex justify-between items-center py-3 border-b border-white/5">
+                                    <span class="text-gray-400">数据集</span>
+                                    <span class="font-medium">CIFAR-10</span>
+                                </div>
+                                <div class="flex justify-between items-center py-3 border-b border-white/5">
+                                    <span class="text-gray-400">模型</span>
+                                    <span class="font-medium">ResNet-50</span>
+                                </div>
+                                <div class="flex justify-between items-center py-3 border-b border-white/5">
+                                    <span class="text-gray-400">预计时间</span>
+                                    <span class="font-medium">~2小时</span>
+                                </div>
+                                <div class="flex justify-between items-center py-3 border-b border-white/5">
+                                    <span class="text-gray-400">显存需求</span>
+                                    <span class="font-medium text-emerald-400">~4GB</span>
+                                </div>
+                            </div>
+
+                            <button onclick="startTraining()" class="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl font-semibold text-lg transition-all neon-glow flex items-center justify-center space-x-2">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                <span>开始训练</span>
+                            </button>
+
+                            <p class="text-xs text-gray-500 text-center mt-4">训练将在后台运行，可随时查看进度</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- 外部 JavaScript -->
+    <script src="static/js/script.js"></script>
+</body>
+</html>

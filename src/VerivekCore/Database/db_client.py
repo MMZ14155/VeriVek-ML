@@ -16,6 +16,7 @@ class DbClient:
         self.verbose = self.cfg["verbose"]
 
         self.db_conn = self._start_db()
+        self.s3_client = self._create_s3_client()
         self.minio_proc = self._start_minio()
         self._init_db()
         self._init_bucket()
@@ -45,26 +46,12 @@ class DbClient:
             print(f"数据库连接失败: {e}")
             raise
 
-    def _start_minio(self):
+    def _create_s3_client(self):
         minio_cfg = self.cfg['minio']
-        timeout = minio_cfg['timeout']
         endpoint_url = minio_cfg['endpoint_url']
         access_key = minio_cfg['access_key']
         secret_key = minio_cfg['secret_key']
-
-        try:
-            proc = subprocess.Popen(
-                ["start_minio.bat"],
-                creationflags=subprocess.CREATE_NEW_CONSOLE,  # Windows 新窗口
-                shell=True
-            )
-            if self.verbose:
-                print(f"MinIO 服务启动中 (PID: {proc.pid})...")
-        except Exception as e:
-            print(f"启动 MinIO 失败: {e}")
-            raise
-
-        s3_client = boto3.client(
+        return boto3.client(
             's3',
             endpoint_url=endpoint_url,
             aws_access_key_id=access_key,
@@ -73,12 +60,29 @@ class DbClient:
             verify=False
         )
 
+    def _start_minio(self):
+        minio_cfg = self.cfg['minio']
+        timeout = minio_cfg['timeout']
+
+        try:
+            proc = subprocess.Popen(
+                ["start_minio.bat"],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                shell=True
+            )
+            if self.verbose:
+                print(f"MinIO 服务启动中 (PID: {proc.pid})...")
+        except Exception as e:
+            print(f"启动 MinIO 失败: {e}")
+            raise
+
+        # 等待 MinIO 服务就绪
         start_time = time.time()
         last_print = 0
 
         while time.time() - start_time < timeout:
             try:
-                s3_client.list_buckets()
+                self.s3_client.list_buckets()
                 if self.verbose:
                     print("MinIO 服务已就绪")
                 return proc
@@ -92,8 +96,27 @@ class DbClient:
         raise TimeoutError(f"MinIO 在 {timeout} 秒内未能启动")
 
     def _init_db(self):
-        sql_path = os.path.join(os.path.dirname(__file__), 'init.sql')
+        # 查询 datasets 表是否存在以检查数据库是否已经初始化
+        cursor = self.db_conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_name = 'datasets'
+                );
+            """)
+            table_exists = cursor.fetchone()[0]
+            if table_exists:
+                if self.verbose:
+                    print("数据库已初始化，跳过初始化脚本")
+                return
+        except Exception as e:
+            print(f"检查数据库状态失败: {e}")
+            raise
+        finally:
+            cursor.close()
 
+        sql_path = os.path.join(os.path.dirname(__file__), 'init.sql')
         try:
             with open(sql_path, 'r', encoding='utf-8') as f:
                 sql_script = f.read()
@@ -118,29 +141,14 @@ class DbClient:
             cursor.close()
 
     def _init_bucket(self):
-        minio_cfg = self.cfg['minio']
-        endpoint_url = minio_cfg['endpoint_url']
-        access_key = minio_cfg['access_key']
-        secret_key = minio_cfg['secret_key']
-
-        s3_client = boto3.client(
-            's3',
-            endpoint_url=endpoint_url,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            use_ssl=False,
-            verify=False
-        )
-
-        bucket_name = "verivek"
-
+        bucket_name = self.cfg.get("minio", {}).get("bucket", "verivek")
         try:
-            s3_client.head_bucket(Bucket=bucket_name)
+            self.s3_client.head_bucket(Bucket=bucket_name)
             if self.verbose:
                 print(f"存储桶 '{bucket_name}' 已存在")
         except ClientError as e:
             if e.response['Error']['Code'] == '404':
-                s3_client.create_bucket(Bucket=bucket_name)
+                self.s3_client.create_bucket(Bucket=bucket_name)
                 print(f"存储桶 '{bucket_name}' 创建成功")
             else:
                 print(f"检查桶时出错: {e}")
