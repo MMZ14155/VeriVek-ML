@@ -332,63 +332,28 @@
                         <h1 class="text-3xl font-bold mb-2">数据集管理</h1>
                         <p class="text-gray-400">管理和预处理训练数据</p>
                     </div>
-                    <button class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-all flex items-center space-x-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    <button onclick="openDatasetImportModal()" class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-all flex items-center space-x-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">...</svg>
                         <span>上传数据集</span>
                     </button>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <!-- 数据集卡片 1 -->
-                    <div class="glass-panel rounded-2xl p-6 hover:border-indigo-500/50 transition-all cursor-pointer group">
-                        <div class="flex items-start justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center">
-                                <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                            </div>
-                            <span class="px-2 py-1 bg-emerald-500/20 text-emerald-400 text-xs rounded-full border border-emerald-500/30">已就绪</span>
-                        </div>
-                        <h3 class="text-lg font-semibold mb-2 group-hover:text-indigo-400 transition-colors">CIFAR-10</h3>
-                        <p class="text-sm text-gray-400 mb-4">经典图像分类数据集，包含10个类别的60000张32x32彩色图像</p>
-                        <div class="flex items-center justify-between text-sm text-gray-500 border-t border-white/5 pt-4">
-                            <span>60,000 样本</span>
-                            <span>163 MB</span>
+                <div class="glass-panel rounded-2xl overflow-hidden">
+                    <div class="p-6 border-b border-white/5">
+                        <div class="flex space-x-6 text-sm">
+                            <button class="text-white font-medium border-b-2 border-indigo-500 pb-2">全部数据集</button>
+                            <button class="text-gray-400 hover:text-white transition-colors pb-2">计算机视觉</button>
+                            <button class="text-gray-400 hover:text-white transition-colors pb-2">自然语言处理</button>
                         </div>
                     </div>
 
-                    <!-- 数据集卡片 2 -->
-                    <div class="glass-panel rounded-2xl p-6 hover:border-indigo-500/50 transition-all cursor-pointer group">
-                        <div class="flex items-start justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                                <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
-                            </div>
-                            <span class="px-2 py-1 bg-emerald-500/20 text-emerald-400 text-xs rounded-full border border-emerald-500/30">已就绪</span>
-                        </div>
-                        <h3 class="text-lg font-semibold mb-2 group-hover:text-indigo-400 transition-colors">IMDB Reviews</h3>
-                        <p class="text-sm text-gray-400 mb-4">用于情感分析的50000条电影评论，二分类问题</p>
-                        <div class="flex items-center justify-between text-sm text-gray-500 border-t border-white/5 pt-4">
-                            <span>50,000 样本</span>
-                            <span>80 MB</span>
-                        </div>
-                    </div>
-
-                    <!-- 数据集卡片 3 -->
-                    <div class="glass-panel rounded-2xl p-6 hover:border-indigo-500/50 transition-all cursor-pointer group">
-                        <div class="flex items-start justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-orange-500/20 flex items-center justify-center">
-                                <svg class="w-6 h-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            </div>
-                            <span class="px-2 py-1 bg-orange-500/20 text-orange-400 text-xs rounded-full border border-orange-500/30">处理中</span>
-                        </div>
-                        <h3 class="text-lg font-semibold mb-2 group-hover:text-indigo-400 transition-colors">Custom Object Detection</h3>
-                        <p class="text-sm text-gray-400 mb-4">自定义目标检测数据集，包含标注的边界框信息</p>
-                        <div class="flex items-center justify-between text-sm text-gray-500 border-t border-white/5 pt-4">
-                            <div class="flex items-center space-x-2">
-                                <div class="w-16 bg-gray-800 rounded-full h-1.5">
-                                    <div class="bg-orange-500 h-1.5 rounded-full" style="width: 65%"></div>
-                                </div>
-                                <span>65%</span>
-                            </div>
-                            <span>1.2 GB</span>
+                    <div class="divide-y divide-white/5" id="dataset-list-container">
+                        <div class="p-8 text-center text-gray-500" id="dataset-list-loading">
+                            <svg class="animate-spin w-8 h-8 mx-auto mb-2 text-indigo-500" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <p>加载数据集列表...</p>
                         </div>
                     </div>
                 </div>
@@ -550,6 +515,128 @@
                                     </div>
                                 </div>
                             </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 数据集导入模态框 -->
+                <div id="dataset-import-modal" class="fixed inset-0 z-[100] hidden">
+                    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onclick="closeDatasetImportModal()"></div>
+
+                    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl p-4">
+                        <div class="glass-panel rounded-2xl p-8 border border-white/10 shadow-2xl relative bg-[#13131f]/95">
+                            <button onclick="closeDatasetImportModal()" class="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-white">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+
+                            <h2 class="text-2xl font-bold mb-6 pr-8">导入数据集</h2>
+
+                            <form id="dataset-import-form" onsubmit="handleDatasetImport(event)">
+                                <div class="space-y-6">
+                                    <!-- 文件夹上传区域（关键：webkitdirectory 支持文件夹选择） -->
+                                    <div id="dataset-drop-zone" class="border-2 border-dashed border-white/20 rounded-xl p-8 text-center hover:border-indigo-500/50 hover:bg-white/5 transition-all cursor-pointer relative group">
+                                        <input type="file" id="dataset-files" name="files" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" webkitdirectory directory multiple required>
+
+                                        <div id="dataset-upload-prompt" class="pointer-events-none">
+                                            <div class="w-16 h-16 rounded-full bg-indigo-500/10 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                                                <svg class="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                                                </svg>
+                                            </div>
+                                            <p class="text-lg font-medium text-gray-300 mb-2">选择文件夹上传</p>
+                                            <p class="text-sm text-gray-500" id="dataset-file-type">支持包含图片、CSV 或 JSON 的文件夹</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- 表单字段 -->
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div class="space-y-2">
+                                            <label class="block text-sm text-gray-400">数据集名称 <span class="text-red-400">*</span></label>
+                                            <input type="text" id="import-dataset-name" name="dataset_name" required
+                                                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-white placeholder-gray-600"
+                                                placeholder="例如：ImageNet-1K">
+                                        </div>
+                                        <div class="space-y-2">
+                                            <label class="block text-sm text-gray-400">数据格式</label>
+                                            <select id="dataset-format" name="format" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-white">
+                                                <option value="auto">自动检测</option>
+                                                <option value="image_folder">图像文件夹</option>
+                                                <option value="csv">CSV</option>
+                                                <option value="json">JSON</option>
+                                                <option value="coco">COCO 格式</option>
+                                                <option value="yolo">YOLO 格式</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <label class="block text-sm text-gray-400">描述</label>
+                                        <textarea id="import-description" name="description" rows="2"
+                                            class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-white resize-none"
+                                            placeholder="数据集描述、用途说明..."></textarea>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <label class="block text-sm text-gray-400">标签（用逗号分隔）</label>
+                                        <input type="text" id="import-tags" name="tags"
+                                            class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-white"
+                                            placeholder="CV, classification, ImageNet...">
+                                    </div>
+
+                                    <input type="hidden" id="import-message" name="message" value="Initial import">
+
+                                    <!-- 进度条 -->
+                                    <div id="upload-progress-container" class="hidden space-y-2">
+                                        <div class="flex justify-between text-sm">
+                                            <span class="text-gray-400">打包上传进度</span>
+                                            <span id="upload-percentage" class="text-indigo-400 font-mono">0%</span>
+                                        </div>
+                                        <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden">
+                                            <div id="upload-progress-bar" class="bg-gradient-to-r from-indigo-500 to-purple-500 h-full rounded-full transition-all" style="width: 0%"></div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 按钮 -->
+                                    <div class="flex justify-end space-x-3 pt-4 border-t border-white/5">
+                                        <button type="button" onclick="closeDatasetImportModal()"
+                                            class="px-6 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-medium transition-colors border border-white/10 text-gray-300">
+                                            取消
+                                        </button>
+                                        <button type="submit" id="dataset-import-submit"
+                                            class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-all flex items-center space-x-2 shadow-lg shadow-indigo-500/25">
+                                            <span>开始导入</span>
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 数据集详情弹窗 -->
+                <div id="dataset-detail-modal" class="fixed inset-0 z-[100] hidden">
+                    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="closeDatasetDetail()"></div>
+                    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-3xl p-4">
+                        <div class="glass-panel rounded-2xl p-6 border border-white/10 bg-[#13131f]/95 max-h-[80vh] overflow-y-auto">
+                            <div class="flex justify-between items-start mb-6">
+                                <div>
+                                    <h2 id="detail-dataset-name" class="text-2xl font-bold mb-1">数据集名称</h2>
+                                    <p id="detail-dataset-meta" class="text-sm text-gray-400">-- 样本 • -- MB</p>
+                                </div>
+                                <button onclick="closeDatasetDetail()" class="p-2 hover:bg-white/10 rounded-lg text-gray-400">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+                            </div>
+
+                            <h3 class="text-sm font-medium text-gray-400 mb-3">版本历史（单线谱系）</h3>
+                            <div id="dataset-versions-list" class="space-y-2">
+                                <!-- 动态渲染版本列表 -->
+                            </div>
                         </div>
                     </div>
                 </div>

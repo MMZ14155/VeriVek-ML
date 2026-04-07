@@ -8,10 +8,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from VerivekCore import get_gpu_info, get_total_usage
 from VerivekCore.Database.db_client import DbClient
 from VerivekCore.ModelManager.model_manager import ModelManager
+from VerivekCore.DatasetManager.dataset_manager import DatasetManager
 
 app = Flask(__name__)
 
 db_client = DbClient()
+dataset_manager = DatasetManager(db_client)
 model_manager = ModelManager(db_client)
 
 ALLOWED_EXTENSIONS = {'py'}
@@ -23,11 +25,88 @@ def allowed_file(filename):
 def index():
     return render_template('index.html')
 
-
 @app.route('/api/datasets', methods=['GET'])
 def get_datasets():
-    pass
+    """获取数据集列表"""
+    try:
+        tag_filter = request.args.get('tag')
+        datasets = dataset_manager.list_datasets(tag_filter=tag_filter)
 
+        return jsonify({
+            'success': True,
+            'datasets': datasets,
+            'total': len(datasets)
+        })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/datasets', methods=['POST'])
+def create_dataset():
+    """创建新数据集（支持文件夹压缩成 ZIP）"""
+    try:
+        # 支持多文件上传（文件夹）或单 zip 文件
+        files = request.files.getlist('files')
+        if not files or all(f.filename == '' for f in files):
+            return jsonify({'error': '未选择文件'}), 400
+
+        dataset_name = request.form.get('dataset_name', '').strip()
+        if not dataset_name:
+            return jsonify({'error': '数据集名称不能为空'}), 400
+
+        # 创建临时目录存放上传的文件
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_folder = os.path.join(temp_dir, 'source')
+            os.makedirs(source_folder)
+
+            # 保存所有文件（保持相对路径结构）
+            for file in files:
+                if file.filename == '':
+                    continue
+
+                # webkitRelativePath 包含文件夹结构
+                relative_path = file.filename
+                file_path = os.path.join(source_folder, relative_path)
+
+                # 创建子目录
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                file.save(file_path)
+
+            # 参数
+            format_type = request.form.get('format', 'auto').strip()
+            description = request.form.get('description', '').strip()
+            tags = request.form.get('tags', '').strip()
+            message = request.form.get('message', 'Initial import').strip()
+            created_by = request.form.get('created_by', 'anonymous').strip()
+
+            # 调用 DatasetManager 导入（自动打包成 zip）
+            version_id = dataset_manager.import_dataset(
+                dataset_name=dataset_name,
+                source_path=source_folder,  # 传入文件夹路径
+                format=format_type,
+                tags=tags,
+                description=description,
+                message=message,
+                created_by=created_by,
+                compression_format='zip'  # 强制使用 zip
+            )
+
+            return jsonify({
+                'success': True,
+                'version_id': version_id,
+                'dataset_name': dataset_name,
+                'message': '数据集导入成功（已自动压缩为 ZIP）'
+            })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/models', methods=['GET'])
 def get_models():
@@ -50,7 +129,6 @@ def get_models():
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
-
 @app.route('/api/models/<int:model_id>', methods=['DELETE'])
 def delete_model(model_id):
     """删除模型"""
@@ -67,7 +145,6 @@ def delete_model(model_id):
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
-
 @app.route('/api/models/import', methods=['POST'])
 def import_model():
     """导入模型"""
@@ -79,8 +156,18 @@ def import_model():
         if file.filename == '':
             return jsonify({'error': '未选择文件'}), 400
 
-        if not allowed_file(file.filename):
-            return jsonify({'error': f'不支持的文件格式，仅支持: {", ".join(ALLOWED_EXTENSIONS)}'}), 400
+        # 文件扩展名校验
+        ALLOWED_EXTENSIONS = {'py'}
+
+        if '.' not in file.filename:
+            return jsonify({'error': '文件名格式错误，缺少扩展名'}), 400
+
+        file_extension = file.filename.rsplit('.', 1)[1].lower()
+
+        if file_extension not in ALLOWED_EXTENSIONS:
+            return jsonify({
+                'error': f'不支持的文件格式 .{file_extension}，仅支持: {", ".join(ALLOWED_EXTENSIONS)}'
+            }), 400
 
         # 获取表单数据
         model_name = request.form.get('model_name', '').strip()
@@ -123,7 +210,6 @@ def import_model():
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
-
 @app.route('/api/models/<int:model_id>/branches', methods=['GET'])
 def get_model_branches(model_id):
     """获取模型的所有分支 - 调用 ModelManager.get_model_detail()"""
@@ -137,7 +223,6 @@ def get_model_branches(model_id):
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/models/<int:model_id>/history', methods=['GET'])
 def get_model_history(model_id):
