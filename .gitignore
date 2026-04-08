@@ -3,5 +3,7 @@
 .idea
 .vscode
 
+*.pyc
+
 minio.exe
 minio-data

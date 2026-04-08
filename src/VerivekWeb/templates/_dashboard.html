@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block title %}训练概览 - VeriVek{% endblock %}
+
+{% block nav_dashboard_class %}tab-active{% endblock %}
+
+{% block content %}
+<div class="fade-in space-y-6">
+    <!-- 页面头部 -->
+    <div class="flex justify-between items-end mb-6">
+        <div>
+            <h1 class="text-3xl font-bold mb-1">训练概览</h1>
+            <p class="text-gray-400 text-sm">系统状态监控与任务管理</p>
+        </div>
+        <a href="{{ url_for('training') if url_for else 'training.html' }}"
+           class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium transition-all neon-glow flex items-center space-x-2 text-sm">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+            <span>新建训练任务</span>
+        </a>
+    </div>
+
+    <!-- 第一行：核心系统指标（3列，关键决策信息） -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <!-- 指标 1：活跃训练（核心操作指标） -->
+        <div class="metric-card rounded-xl p-5 relative overflow-hidden border-l-4 border-indigo-500">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-gray-400 text-sm font-medium">活跃训练任务</span>
+                <span class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </span>
+            </div>
+            <div class="flex items-baseline space-x-2">
+                <div class="text-3xl font-bold">3</div>
+                <span class="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">运行正常</span>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">2个高优先级 • 1个后台任务</div>
+        </div>
+
+        <!-- 指标 2：GPU 利用率（资源监控核心） -->
+        <div class="metric-card rounded-xl p-5 relative overflow-hidden border-l-4 border-orange-500">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-gray-400 text-sm font-medium">GPU 利用率</span>
+                <span class="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                </span>
+            </div>
+            <div class="flex items-baseline space-x-2">
+                <div class="text-3xl font-bold" id="dashboard-gpu-percent">78%</div>
+                <span class="text-xs text-orange-400">2个任务运行中</span>
+            </div>
+            <div class="mt-3 w-full bg-gray-800 rounded-full h-1.5">
+                <div class="bg-orange-500 h-1.5 rounded-full" style="width: 78%"></div>
+            </div>
+        </div>
+
+        <!-- 指标 3：显存使用（关键资源瓶颈指标） -->
+        <div class="metric-card rounded-xl p-5 relative overflow-hidden border-l-4 border-purple-500">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-gray-400 text-sm font-medium">显存占用</span>
+                <span class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                </span>
+            </div>
+            <div class="flex items-baseline space-x-2">
+                <div class="text-3xl font-bold" id="dashboard-vram-text">10.2<span class="text-lg text-gray-500">/16 GB</span></div>
+                <span class="text-xs text-purple-400">剩余 5.8 GB</span>
+            </div>
+            <div class="mt-3 w-full bg-gray-800 rounded-full h-1.5">
+                <div class="bg-purple-500 h-1.5 rounded-full" style="width: 64%"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 第二行：系统告警区域（新增，折叠式，无告警时自动收缩） -->
+    <div id="alert-banner" class="hidden bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-center space-x-3">
+        <svg class="w-5 h-5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <div class="flex-1">
+            <span class="text-red-400 font-medium text-sm">检测到异常：</span>
+            <span class="text-gray-300 text-sm">Vision Transformer 任务 Loss 连续3个epoch未下降，建议检查学习率</span>
+        </div>
+        <button class="text-xs text-gray-400 hover:text-white underline">查看详情</button>
+        <button onclick="document.getElementById('alert-banner').classList.add('hidden')" class="text-gray-500 hover:text-gray-300">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+    </div>
+
+    <!-- 第三行：进行中的任务（主要视觉区域，占据全宽） -->
+    <div class="glass-panel rounded-2xl p-6 border border-white/10">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-lg font-semibold flex items-center">
+                <span class="w-2 h-2 bg-emerald-500 rounded-full mr-2 status-dot"></span>
+                进行中的训练任务
+            </h3>
+            <div class="flex space-x-2">
+                <button class="px-3 py-1.5 text-xs bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-gray-400">全部暂停</button>
+                <button class="px-3 py-1.5 text-xs bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-gray-400">批量操作</button>
+            </div>
+        </div>
+
+        <div class="space-y-3" id="active-tasks-list">
+            <!-- 任务 1：高优先级/主要任务 -->
+            <div class="flex items-center p-4 bg-white/5 rounded-xl border border-white/5 hover:border-indigo-500/30 transition-all group">
+                <div class="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center mr-4 flex-shrink-0">
+                    <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="flex items-center space-x-2">
+                            <h4 class="font-medium text-sm truncate">GPT-2 Fine-tuning</h4>
+                            <span class="px-1.5 py-0.5 text-[10px] bg-indigo-500/20 text-indigo-300 rounded border border-indigo-500/30">Epoch 5/20</span>
+                        </div>
+                        <span class="text-xs text-gray-400 font-mono">剩余 2h 15m</span>
+                    </div>
+                    <div class="flex items-center space-x-4 text-xs text-gray-400 mb-2">
+                        <span>Loss: <span class="text-white font-mono">2.34</span></span>
+                        <span>LR: <span class="text-white font-mono">1e-4</span></span>
+                        <span>Batch: <span class="text-white font-mono">64</span></span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1.5">
+                        <div class="bg-gradient-to-r from-indigo-500 to-purple-500 h-1.5 rounded-full transition-all duration-500" style="width: 25%"></div>
+                    </div>
+                </div>
+                <div class="ml-4 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button class="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-400" title="暂停">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                    <button class="p-2 hover:bg-red-500/20 rounded-lg transition-colors text-gray-400 hover:text-red-400" title="停止">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 任务 2 -->
+            <div class="flex items-center p-4 bg-white/5 rounded-xl border border-white/5 hover:border-purple-500/30 transition-all group">
+                <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center mr-4 flex-shrink-0">
+                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="flex items-center space-x-2">
+                            <h4 class="font-medium text-sm truncate">Vision Transformer</h4>
+                            <span class="px-1.5 py-0.5 text-[10px] bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">Epoch 12/50</span>
+                        </div>
+                        <span class="text-xs text-gray-400 font-mono">剩余 5h 30m</span>
+                    </div>
+                    <div class="flex items-center space-x-4 text-xs text-gray-400 mb-2">
+                        <span>Loss: <span class="text-white font-mono">0.89</span></span>
+                        <span>Acc: <span class="text-emerald-400 font-mono">87.3%</span></span>
+                        <span>GPU: <span class="text-orange-400 font-mono">45%</span></span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1.5">
+                        <div class="bg-gradient-to-r from-purple-500 to-pink-500 h-1.5 rounded-full transition-all duration-500" style="width: 24%"></div>
+                    </div>
+                </div>
+                <div class="ml-4 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button class="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-400" title="暂停">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                    <button class="p-2 hover:bg-red-500/20 rounded-lg transition-colors text-gray-400 hover:text-red-400" title="停止">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 任务 3：后台/低优先级任务（折叠状态示例） -->
+            <div class="flex items-center p-3 bg-white/[0.02] rounded-xl border border-white/5 opacity-75 hover:opacity-100 transition-opacity">
+                <div class="w-8 h-8 rounded-lg bg-gray-500/20 flex items-center justify-center mr-3 flex-shrink-0">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between mb-0.5">
+                        <h4 class="font-medium text-sm text-gray-400 truncate">数据预处理 - ImageNet 验证集</h4>
+                        <span class="text-xs text-gray-500">后台任务</span>
+                    </div>
+                    <div class="w-full bg-gray-800/50 rounded-full h-1">
+                        <div class="bg-gray-500 h-1 rounded-full" style="width: 65%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 第四行：次要信息（趋势图 + 最近活动） -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 左侧 2/3：训练趋势图（保留但弱化标题） -->
+        <div class="lg:col-span-2 glass-panel rounded-2xl p-6 border border-white/5">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-medium text-gray-400">训练趋势（最近7天）</h3>
+                <select class="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 text-gray-400">
+                    <option>7天</option>
+                    <option>30天</option>
+                </select>
+            </div>
+            <div class="h-48 w-full">
+                <canvas id="trainingChart"></canvas>
+            </div>
+        </div>
+
+        <!-- 右侧 1/3：精简的最近活动（仅2条关键信息） -->
+        <div class="glass-panel rounded-2xl p-6 border border-white/5 flex flex-col">
+            <h3 class="text-sm font-medium text-gray-400 mb-4">最近动态</h3>
+            <div class="space-y-3 flex-1">
+                <!-- 仅保留需要关注的最近事件 -->
+                <div class="flex items-start space-x-3 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                    <div class="w-2 h-2 mt-1.5 rounded-full bg-emerald-500 flex-shrink-0"></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-200 truncate">ResNet-50 训练完成</p>
+                        <p class="text-xs text-gray-500 mt-0.5">准确率 96.4% • 2分钟前</p>
+                    </div>
+                </div>
+                <div class="flex items-start space-x-3 p-3 rounded-lg bg-indigo-500/5 border border-indigo-500/10">
+                    <div class="w-2 h-2 mt-1.5 rounded-full bg-indigo-500 flex-shrink-0"></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-200 truncate">BERT-Large 开始训练</p>
+                        <p class="text-xs text-gray-500 mt-0.5">Epoch 3/10 • 15分钟前</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 快速操作按钮 -->
+            <div class="mt-4 pt-4 border-t border-white/5 grid grid-cols-2 gap-2">
+                <a href="{{ url_for('datasets') if url_for else 'datasets.html' }}"
+                   class="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-gray-400 transition-colors text-center">
+                    管理数据集
+                </a>
+                <a href="{{ url_for('models') if url_for else 'models.html' }}"
+                   class="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs text-gray-400 transition-colors text-center">
+                    查看模型
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 第五行：今日统计（弱化展示，小字） -->
+    <div class="flex items-center justify-between px-2 py-3 text-xs text-gray-500 border-t border-white/5 mt-6">
+        <div class="flex space-x-6">
+            <span>今日完成: <strong class="text-gray-300">3</strong> 个任务</span>
+            <span>平均耗时: <strong class="text-gray-300">1.4h</strong></span>
+            <span>成功率: <strong class="text-emerald-400">100%</strong></span>
+        </div>
+        <div class="flex items-center space-x-2">
+            <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full status-dot"></span>
+            <span>系统正常运行 14 天</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/_dashboard.js') if url_for else 'static/js/_dashboard.js' }}"></script>
+{% endblock %}

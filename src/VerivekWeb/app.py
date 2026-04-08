@@ -1,6 +1,6 @@
 import os
 import sys
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, redirect, url_for
 from werkzeug.utils import secure_filename
 import tempfile
 
@@ -23,7 +23,28 @@ def allowed_file(filename):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    """根路径重定向到仪表板"""
+    return redirect(url_for('dashboard'))
+
+@app.route('/dashboard')
+def dashboard():
+    """仪表板页面 - 训练概览"""
+    return render_template('_dashboard.html')
+
+@app.route('/datasets')
+def datasets():
+    """数据集管理页面"""
+    return render_template('_datasets.html')
+
+@app.route('/models')
+def models():
+    """模型仓库页面"""
+    return render_template('_models.html')
+
+@app.route('/training')
+def training():
+    """训练配置页面"""
+    return render_template('_training.html')
 
 @app.route('/api/datasets', methods=['GET'])
 def get_datasets():

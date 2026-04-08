@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}训练配置 - VeriVek{% endblock %}
+
+{% block nav_training_class %}tab-active{% endblock %}
+
+{% block content %}
+<div class="fade-in space-y-6">
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold mb-2">训练配置</h1>
+            <p class="text-gray-400">配置超参数并启动训练任务</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 左侧：选择与配置 -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- 数据集选择 -->
+            <div class="glass-panel rounded-2xl p-6">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <span class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm mr-2">1</span>
+                    选择数据集
+                </h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="p-4 rounded-xl border-2 border-indigo-500 bg-indigo-500/10 cursor-pointer transition-all">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-medium">CIFAR-10</span>
+                            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        </div>
+                        <p class="text-xs text-gray-400">60,000 样本 • 图像分类</p>
+                    </div>
+                    <div class="p-4 rounded-xl border border-white/10 hover:border-white/30 cursor-pointer transition-all">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-medium">IMDB Reviews</span>
+                        </div>
+                        <p class="text-xs text-gray-400">50,000 样本 • 情感分析</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 模型选择 -->
+            <div class="glass-panel rounded-2xl p-6">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <span class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm mr-2">2</span>
+                    选择模型
+                </h3>
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="p-4 rounded-xl border border-white/10 hover:border-indigo-500/50 cursor-pointer transition-all">
+                        <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mb-2">
+                            <span class="text-xs font-bold text-indigo-400">R18</span>
+                        </div>
+                        <div class="text-sm font-medium">ResNet-18</div>
+                        <div class="text-xs text-gray-400 mt-1">轻量级</div>
+                    </div>
+                    <div class="p-4 rounded-xl border-2 border-indigo-500 bg-indigo-500/10 cursor-pointer transition-all relative">
+                        <div class="absolute top-2 right-2">
+                            <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        </div>
+                        <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mb-2">
+                            <span class="text-xs font-bold text-indigo-400">R50</span>
+                        </div>
+                        <div class="text-sm font-medium">ResNet-50</div>
+                        <div class="text-xs text-gray-400 mt-1">平衡型</div>
+                    </div>
+                    <div class="p-4 rounded-xl border border-white/10 hover:border-indigo-500/50 cursor-pointer transition-all">
+                        <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mb-2">
+                            <span class="text-xs font-bold text-indigo-400">R101</span>
+                        </div>
+                        <div class="text-sm font-medium">ResNet-101</div>
+                        <div class="text-xs text-gray-400 mt-1">高精度</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 超参数配置 -->
+            <div class="glass-panel rounded-2xl p-6">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <span class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm mr-2">3</span>
+                    超参数配置
+                </h3>
+                <div class="grid grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">学习率 (Learning Rate)</label>
+                        <input type="number" value="0.001" step="0.0001" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">批次大小 (Batch Size)</label>
+                        <select class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
+                            <option>32</option>
+                            <option selected>64</option>
+                            <option>128</option>
+                            <option>256</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">训练轮数 (Epochs)</label>
+                        <input type="number" value="50" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">优化器</label>
+                        <select class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
+                            <option selected>Adam</option>
+                            <option>SGD</option>
+                            <option>AdamW</option>
+                            <option>RMSprop</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">权重衰减 (Weight Decay)</label>
+                        <input type="number" value="0.0001" step="0.0001" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">学习率调度</label>
+                        <select class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
+                            <option>固定</option>
+                            <option selected>余弦退火</option>
+                            <option>步进衰减</option>
+                            <option>指数衰减</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：摘要与启动 -->
+        <div class="space-y-6">
+            <div class="glass-panel rounded-2xl p-6 sticky top-6">
+                <h3 class="text-lg font-semibold mb-6">训练摘要</h3>
+
+                <div class="space-y-4 mb-6">
+                    <div class="flex justify-between items-center py-3 border-b border-white/5">
+                        <span class="text-gray-400">数据集</span>
+                        <span class="font-medium">CIFAR-10</span>
+                    </div>
+                    <div class="flex justify-between items-center py-3 border-b border-white/5">
+                        <span class="text-gray-400">模型</span>
+                        <span class="font-medium">ResNet-50</span>
+                    </div>
+                    <div class="flex justify-between items-center py-3 border-b border-white/5">
+                        <span class="text-gray-400">预计时间</span>
+                        <span class="font-medium">~2小时</span>
+                    </div>
+                    <div class="flex justify-between items-center py-3 border-b border-white/5">
+                        <span class="text-gray-400">显存需求</span>
+                        <span class="font-medium text-emerald-400">~4GB</span>
+                    </div>
+                </div>
+
+                <button onclick="startTraining()" class="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl font-semibold text-lg transition-all neon-glow flex items-center justify-center space-x-2">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>开始训练</span>
+                </button>
+
+                <p class="text-xs text-gray-500 text-center mt-4">训练将在后台运行，可随时查看进度</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/_training.js') if url_for else 'static/js/_training.js' }}"></script>
+{% endblock %}
