@@ -129,6 +129,101 @@ def create_dataset():
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/datasets/<int:dataset_id>/versions', methods=['GET'])
+def get_dataset_versions(dataset_id: int):
+    """获取数据集的版本历史（用于可视化谱系）"""
+    try:
+        # 获取数据集基本信息
+        dataset = dataset_manager.get_dataset_by_id(dataset_id)
+        if not dataset:
+            return jsonify({'success': False, 'error': '数据集不存在'}), 404
+
+        # 获取版本历史=
+        versions = dataset_manager.get_dataset_patches(dataset_id)
+
+        # 数据集存在但没有版本时返回空数组
+        if not versions:
+            # 返回数据集基本信息，versions 为空
+            return jsonify({
+                'success': True,
+                'dataset': {
+                    'dataset_id': dataset_id,
+                    'dataset_name': dataset['dataset_name'],
+                    'total_rows': dataset['total_rows'] or 0,
+                    'total_size_bytes': dataset['total_size_bytes'] or 0,
+                    'format': dataset['format'],
+                    'description': dataset['description']
+                },
+                'versions': []
+            })
+
+        return jsonify({
+            'success': True,
+            'dataset': {
+                'dataset_id': dataset_id,
+                'dataset_name': dataset['dataset_name'],
+                'total_rows': dataset['total_rows'] or versions[-1]['rows_count'] if versions else 0,
+                'total_size_bytes': dataset['total_size_bytes'] or 0,
+                'format': dataset['format'],
+                'description': dataset['description']
+            },
+            'versions': versions
+        })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/datasets/<int:dataset_id>/versions', methods=['POST'])
+def create_dataset_version(dataset_id):
+    """追加新版本数据"""
+    try:
+        files = request.files.getlist('files')
+        message = request.form.get('message', '追加数据版本')
+        parent_version = request.form.get('parent_version', 'latest')
+        update_mode = request.form.get('update_mode', 'append')
+
+        if not files or all(f.filename == '' for f in files):
+            return jsonify({'success': False, 'error': '未选择文件'}), 400
+
+        # 创建临时目录存放上传的文件
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_folder = os.path.join(temp_dir, 'source')
+            os.makedirs(source_folder)
+
+            # 保存所有文件（保持相对路径结构）
+            for file in files:
+                if file.filename == '':
+                    continue
+
+                relative_path = file.filename
+                file_path = os.path.join(source_folder, relative_path)
+
+                # 创建子目录
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                file.save(file_path)
+
+            # 调用 DatasetManager 追加版本
+            version_id = dataset_manager.append_patch(
+                dataset_id=dataset_id,
+                source_path=source_folder,
+                message=message,
+                created_by=request.form.get('created_by', 'anonymous'),
+                update_mode=update_mode
+            )
+
+            return jsonify({
+                'success': True,
+                'version_id': version_id,
+                'message': '版本追加成功'
+            })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/models', methods=['GET'])
 def get_models():
     """获取模型列表"""

@@ -6,6 +6,7 @@ class DatasetRepository:
     def __init__(self, db_client: DbClient):
         self.db = db_client
 
+    # 用数据集名称查询数据集
     def get_dataset(self, dataset_name: str) -> Optional[Dict]:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
@@ -31,6 +32,66 @@ class DatasetRepository:
                     "total_size_bytes": row[7], "created_at": row[8]
                 }
             return None
+
+    # 用数据集id查询数据集
+    def get_dataset_by_id(self, dataset_id: int) -> Optional[Dict]:
+        with self.db.db_conn.cursor() as cur:
+            cur.execute(
+                """SELECT dataset_id,
+                          dataset_name,
+                          description,
+                          format,
+                          tags,
+                          head_version_id,
+                          total_rows,
+                          total_size_bytes,
+                          created_at
+                   FROM datasets
+                   WHERE dataset_id = %s""",
+                (dataset_id,)
+            )
+            row = cur.fetchone()
+            if row:
+                return {
+                    "dataset_id": row[0], "dataset_name": row[1],
+                    "description": row[2], "format": row[3], "tags": row[4],
+                    "head_version_id": row[5], "total_rows": row[6],
+                    "total_size_bytes": row[7], "created_at": row[8]
+                }
+            return None
+
+    # 获取数据集列表
+    def list_datasets(self, tag_filter: Optional[str] = None) -> List[Dict]:
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("""
+                        SELECT d.dataset_id,
+                               d.dataset_name,
+                               d.description,
+                               d.format,
+                               d.tags,
+                               d.total_rows,
+                               d.total_size_bytes,
+                               d.created_at,
+                               d.head_version_id,
+                               COUNT(v.version_id) as version_count
+                        FROM datasets d
+                                 LEFT JOIN dataset_versions v ON d.dataset_id = v.dataset_id
+                        GROUP BY d.dataset_id
+                        ORDER BY d.created_at DESC
+                        """)
+
+            datasets = []
+            for row in cur.fetchall():
+                dataset = {
+                    "dataset_id": row[0], "dataset_name": row[1], "description": row[2],
+                    "format": row[3], "tags": row[4], "total_rows": row[5],
+                    "total_size_bytes": row[6], "created_at": row[7],
+                    "head_version_id": row[8], "version_count": row[9]
+                }
+                if tag_filter and (not dataset["tags"] or tag_filter not in dataset["tags"]):
+                    continue
+                datasets.append(dataset)
+            return datasets
 
     def create_dataset(self, dataset_name: str, description: str = "",
                        format: str = "", tags: str = "") -> int:
