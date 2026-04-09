@@ -141,17 +141,25 @@ class DbClient:
             cursor.close()
 
     def _init_bucket(self):
-        bucket_name = self.cfg.get("minio", {}).get("bucket", "verivek")
-        try:
-            self.s3_client.head_bucket(Bucket=bucket_name)
-            if self.verbose:
-                print(f"存储桶 '{bucket_name}' 已存在")
-        except ClientError as e:
-            if e.response['Error']['Code'] == '404':
-                self.s3_client.create_bucket(Bucket=bucket_name)
-                print(f"存储桶 '{bucket_name}' 创建成功")
-            else:
-                print(f"检查桶时出错: {e}")
+        buckets_config = self.cfg.get("minio", {}).get("buckets", {})
+
+        bucket_names = set(buckets_config.values())
+
+        for bucket_name in bucket_names:
+            try:
+                self.s3_client.head_bucket(Bucket=bucket_name)
+                if self.verbose:
+                    print(f"存储桶 '{bucket_name}' 已存在")
+            except ClientError as e:
+                error_code = e.response['Error']['Code']
+                if error_code == '404' or error_code == 'NoSuchBucket':
+                    self.s3_client.create_bucket(Bucket=bucket_name)
+                    print(f"存储桶 '{bucket_name}' 创建成功")
+                else:
+                    print(f"检查桶 '{bucket_name}' 时出错: {e}")
+                    raise
+            except Exception as e:
+                print(f"初始化存储桶 '{bucket_name}' 失败: {e}")
                 raise
 
     def stop_minio(self):
