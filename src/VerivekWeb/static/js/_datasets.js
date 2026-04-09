@@ -374,7 +374,7 @@ function drawVersionConnections(versions) {
 
         path.setAttribute('d', d);
         path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', '#10b981');
+        path.setAttribute('stroke', lineColor);
         path.setAttribute('stroke-width', '2');
         path.setAttribute('stroke-dasharray', '5,5');
         path.setAttribute('opacity', '0.6');
@@ -389,7 +389,7 @@ function drawVersionConnections(versions) {
 
         const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
         arrow.setAttribute('points', `${arrowX},${arrowY-arrowSize} ${arrowX+arrowSize*2},${arrowY} ${arrowX},${arrowY+arrowSize}`);
-        arrow.setAttribute('fill', '#10b981');
+        arrow.setAttribute('fill', lineColor);
         arrow.setAttribute('opacity', '0.8');
         const rotation = angle * 180 / Math.PI;
         arrow.setAttribute('transform', `rotate(${rotation}, ${arrowX}, ${arrowY})`);

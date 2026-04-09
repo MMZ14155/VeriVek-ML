@@ -245,6 +245,23 @@ def get_models():
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/models/<int:model_id>', methods=['GET'])
+def get_model_detail(model_id):
+    """获取模型详情（包含分支统计）"""
+    try:
+        detail = model_manager.get_model_detail(model_id)
+        if not detail or not detail.get('model'):
+            return jsonify({'success': False, 'error': '模型不存在'}), 404
+
+        return jsonify({
+            'success': True,
+            'model': detail['model'],
+            'branches': detail['branches'],
+            'branch_count': detail['branch_count']
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/models/<int:model_id>', methods=['DELETE'])
 def delete_model(model_id):
     """删除模型"""
@@ -260,6 +277,74 @@ def delete_model(model_id):
         import traceback
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/models/<int:model_id>/branches', methods=['POST'])
+def create_model_branch(model_id):
+    try:
+        data = request.get_json() or {}
+        branch_name = data.get('branch_name', '').strip()
+        description = data.get('description', '').strip()
+        base_commit_id = data.get('base_commit_id')  # 可选，基于哪个提交创建
+
+        if not branch_name:
+            return jsonify({'success': False, 'error': '分支名称不能为空'}), 400
+
+        # 检查模型是否存在
+        model_detail = model_manager.get_model_detail(model_id)
+        if not model_detail or not model_detail.get('model', {}).get('model_name'):
+            return jsonify({'success': False, 'error': '模型不存在'}), 404
+
+        # 如果提供了 base_commit_id，验证其有效性
+        if base_commit_id:
+            commit = model_manager.repo.get_commit(base_commit_id)
+            if not commit or commit['model_id'] != model_id:
+                return jsonify({'success': False, 'error': '无效的提交ID或不属于该模型'}), 400
+
+        # 创建分支
+        branch_id = model_manager.create_branch(
+            model_id=model_id,
+            branch_name=branch_name,
+            description=description,
+            base_commit_id=base_commit_id
+        )
+
+        return jsonify({
+            'success': True,
+            'branch_id': branch_id,
+            'branch_name': branch_name,
+            'model_id': model_id,
+            'base_commit_id': base_commit_id,
+            'message': '分支创建成功'
+        })
+
+    except ValueError as e:
+        # 分支已存在等业务逻辑错误
+        return jsonify({'success': False, 'error': str(e)}), 409
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/models/<int:model_id>/commits', methods=['GET'])
+def get_model_commits(model_id):
+    """获取指定分支的提交历史（用于版本图谱）"""
+    try:
+        branch_name = request.args.get('branch', 'main')
+        commits = model_manager.get_commit_history(model_id, branch_name)
+
+        # 按时间正序排列（旧 -> 新），适配横向时间线
+        commits = sorted(commits, key=lambda x: x['created_at'])
+
+        return jsonify({
+            'success': True,
+            'model_id': model_id,
+            'branch': branch_name,
+            'commits': commits,
+            'total': len(commits)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/models/import', methods=['POST'])
 def import_model():

@@ -164,6 +164,190 @@
         </div>
     </div>
 </div>
+
+<!-- 模型版本历史图谱模态框 -->
+<div id="model-graph-modal" class="fixed inset-0 z-[100] hidden">
+    <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="closeModelGraph()"></div>
+
+    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[95%] h-[90%] p-4">
+        <div class="glass-panel rounded-2xl w-full h-full border border-white/10 bg-[#13131f]/95 flex flex-col overflow-hidden relative">
+
+            <!-- 头部信息 -->
+            <div class="flex items-center justify-between p-6 border-b border-white/5 shrink-0">
+                <div class="flex items-center space-x-4">
+                    <div class="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 id="graph-model-name" class="text-2xl font-bold">模型名称</h2>
+                        <p id="graph-model-meta" class="text-sm text-gray-400 mt-1">-- 提交 • -- 分支</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                    <button onclick="openCommitUploadPanel()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-sm font-medium transition-all flex items-center space-x-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                        </svg>
+                        <span>提交更新</span>
+                    </button>
+                    <button onclick="closeModelGraph()" class="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 主要内容区：左侧图谱 + 右侧详情 -->
+            <div class="flex-1 flex overflow-hidden">
+
+                <!-- 左侧：可视化图谱区域（可横向滚动） -->
+                <div class="flex-1 overflow-x-auto overflow-y-hidden relative bg-gradient-to-b from-transparent to-black/20" id="model-graph-container">
+                    <!-- SVG连接线层 -->
+                    <svg id="model-graph-svg" class="absolute top-0 left-0 w-full h-full pointer-events-none z-0"></svg>
+
+                    <!-- 提交节点容器（横向排列） -->
+                    <div id="commit-nodes" class="flex items-center px-12 h-full space-x-16 relative z-10 min-w-max">
+                        <!-- 动态渲染提交节点 -->
+                    </div>
+
+                    <!-- 图例 -->
+                    <div class="absolute bottom-4 left-6 flex items-center space-x-6 text-xs text-gray-500 bg-black/40 backdrop-blur px-4 py-2 rounded-full border border-white/5">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 rounded-full bg-indigo-500"></div>
+                            <span>历史提交</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+                            <span>最新提交</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：提交详情与上传面板 -->
+                <div class="w-96 border-l border-white/5 bg-black/20 flex flex-col shrink-0">
+
+                    <!-- 提交详情（默认显示） -->
+                    <div id="commit-detail-panel" class="p-6 space-y-6 overflow-y-auto flex-1">
+                        <div class="text-center text-gray-500 mt-12">
+                            <svg class="w-16 h-16 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <p>点击左侧节点查看提交详情</p>
+                        </div>
+                    </div>
+
+                    <!-- 提交新版本面板（默认隐藏） -->
+                    <div id="commit-upload-panel" class="hidden p-6 space-y-4 overflow-y-auto flex-1 border-t border-white/5 bg-emerald-900/10">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="font-semibold text-emerald-400">提交新版本</h3>
+                            <button onclick="closeCommitUploadPanel()" class="text-gray-400 hover:text-white">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <form id="commit-upload-form" onsubmit="handleCommitUpload(event)">
+                            <div class="space-y-3">
+                                <div class="p-3 bg-white/5 rounded-lg border border-white/10">
+                                    <div class="text-xs text-gray-400 mb-1">当前分支</div>
+                                    <select id="commit-branch-select" class="w-full bg-transparent text-sm text-white focus:outline-none">
+                                        <option value="main">main</option>
+                                    </select>
+                                </div>
+
+                                <div id="commit-drop-zone" class="border-2 border-dashed border-emerald-500/30 rounded-xl p-4 text-center hover:border-emerald-500/60 hover:bg-emerald-500/5 transition-all cursor-pointer relative">
+                                    <input type="file" id="commit-model-file" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".py" required>
+                                    <svg class="w-8 h-8 mx-auto mb-2 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                    </svg>
+                                    <p class="text-sm text-gray-300">选择 .py 模型文件</p>
+                                    <p class="text-xs text-gray-500 mt-1" id="commit-file-name">支持 PyTorch/TensorFlow 定义</p>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">提交信息 <span class="text-red-400">*</span></label>
+                                    <input type="text" id="commit-message" placeholder="描述本次更新..." required
+                                        class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">作者</label>
+                                    <input type="text" id="commit-author" placeholder="Your Name"
+                                        class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                                </div>
+
+                                <!-- 进度条（默认隐藏） -->
+                                <div id="commit-upload-progress" class="hidden space-y-1">
+                                    <div class="flex justify-between text-xs text-gray-400">
+                                        <span>上传进度</span>
+                                        <span id="commit-upload-percent" class="text-emerald-400">0%</span>
+                                    </div>
+                                    <div class="w-full bg-gray-800 rounded-full h-1.5">
+                                        <div id="commit-progress-bar" class="bg-emerald-500 h-full rounded-full transition-all" style="width: 0%"></div>
+                                    </div>
+                                </div>
+
+                                <button type="submit" id="commit-submit-btn" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium text-sm transition-all flex items-center justify-center space-x-2">
+                                    <span>确认提交</span>
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- 创建分支面板 -->
+                    <div id="create-branch-panel" class="hidden p-6 space-y-4 overflow-y-auto flex-1 border-t border-white/5 bg-purple-900/10">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="font-semibold text-purple-400">创建新分支</h3>
+                            <button onclick="closeCreateBranchPanel()" class="text-gray-400 hover:text-white">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div class="p-3 bg-white/5 rounded-lg border border-white/10">
+                                <div class="text-xs text-gray-400 mb-1">基于提交</div>
+                                <div id="base-commit-info" class="text-sm text-white font-mono">--</div>
+                                <input type="hidden" id="base-commit-id">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">新分支名称 <span class="text-red-400">*</span></label>
+                                <input type="text" id="new-branch-name" placeholder="feature/new-branch" required
+                                    class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">分支描述</label>
+                                <input type="text" id="new-branch-description" placeholder="描述这个分支的用途..."
+                                    class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500">
+                            </div>
+
+                            <div id="create-branch-error" class="hidden text-xs text-red-400 bg-red-500/10 p-2 rounded border border-red-500/20"></div>
+
+                            <button onclick="handleCreateBranch()" id="create-branch-btn"
+                                class="w-full py-2.5 bg-purple-600 hover:bg-purple-500 rounded-lg font-medium text-sm transition-all flex items-center justify-center space-x-2">
+                                <span>创建分支</span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block page_scripts %}

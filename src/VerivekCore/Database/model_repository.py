@@ -15,6 +15,41 @@ class ModelRepository:
                 return {"model_id": row[0], "description": row[1], "tags": row[2]}
             return None
 
+    def get_model_by_id(self, model_id: int) -> Optional[Dict]:
+        """通过ID获取模型详情"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute(
+                "SELECT model_id, model_name, description, tags FROM models WHERE model_id = %s",
+                (model_id,)
+            )
+            row = cur.fetchone()
+            if row:
+                return {
+                    "model_id": row[0], "model_name": row[1],
+                    "description": row[2], "tags": row[3]
+                }
+            return None
+
+    def list_models(self) -> List[Dict]:
+        """查询所有模型及分支数统计"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("""
+                        SELECT m.model_id,
+                               m.model_name,
+                               m.description,
+                               m.tags,
+                               m.created_at,
+                               COUNT(b.branch_id) as branch_count
+                        FROM models m
+                                 LEFT JOIN model_branches b ON m.model_id = b.model_id
+                        GROUP BY m.model_id
+                        ORDER BY m.created_at DESC
+                        """)
+            return [{
+                "model_id": r[0], "model_name": r[1], "description": r[2],
+                "tags": r[3], "created_at": r[4], "branch_count": r[5]
+            } for r in cur.fetchall()]
+
     def create_model(self, model_name: str, description: str = "", tags: str = "") -> int:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
@@ -29,6 +64,15 @@ class ModelRepository:
         with self.db.db_conn.cursor() as cur:
             cur.execute("DELETE FROM models WHERE model_id = %s", (model_id,))
             self.db.db_conn.commit()
+
+    def get_commit_object_keys_by_model_id(self, model_id: int) -> List[str]:
+        """获取模型下所有提交的对象存储键（用于删除时清理）"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute(
+                "SELECT object_key FROM model_commits WHERE model_id = %s",
+                (model_id,)
+            )
+            return [r[0] for r in cur.fetchall()]
 
     def get_branch(self, model_id: int, branch_name: str) -> Optional[Dict]:
         with self.db.db_conn.cursor() as cur:
