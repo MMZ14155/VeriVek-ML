@@ -1,13 +1,19 @@
 from typing import Optional, List, Dict
-import psycopg2
+import json
 from .db_client import DbClient
 
 class DatasetRepository:
-    def __init__(self, db_client: DbClient):
+    def __init__(
+            self,
+            db_client: DbClient
+    ):
         self.db = db_client
 
     # 用数据集名称查询数据集
-    def get_dataset(self, dataset_name: str) -> Optional[Dict]:
+    def get_dataset(
+            self,
+            dataset_name: str
+    ) -> Optional[Dict]:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
                 """SELECT dataset_id,
@@ -34,7 +40,10 @@ class DatasetRepository:
             return None
 
     # 用数据集id查询数据集
-    def get_dataset_by_id(self, dataset_id: int) -> Optional[Dict]:
+    def get_dataset_by_id(
+            self,
+            dataset_id: int
+    ) -> Optional[Dict]:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
                 """SELECT dataset_id,
@@ -61,7 +70,10 @@ class DatasetRepository:
             return None
 
     # 获取数据集列表
-    def list_datasets(self, tag_filter: Optional[str] = None) -> List[Dict]:
+    def list_datasets(
+            self,
+            tag_filter: Optional[str] = None
+    ) -> List[Dict]:
         with self.db.db_conn.cursor() as cur:
             cur.execute("""
                         SELECT d.dataset_id,
@@ -93,8 +105,13 @@ class DatasetRepository:
                 datasets.append(dataset)
             return datasets
 
-    def create_dataset(self, dataset_name: str, description: str = "",
-                       format: str = "", tags: str = "") -> int:
+    def create_dataset(
+            self,
+            dataset_name: str,
+            description: str = "",
+            format: str = "",
+            tags: str = ""
+    ) -> int:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO datasets (dataset_name, description, format, tags,
@@ -107,7 +124,10 @@ class DatasetRepository:
             self.db.db_conn.commit()
             return dataset_id
 
-    def delete_dataset(self, dataset_id: int) -> List[Dict]:
+    def delete_dataset(
+            self,
+            dataset_id: int
+    ) -> List[Dict]:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
                 """SELECT version_id, object_key
@@ -120,8 +140,13 @@ class DatasetRepository:
             self.db.db_conn.commit()
             return [{"version_id": v[0], "object_key": v[1]} for v in versions]
 
-    def update_dataset_stats(self, dataset_id: int, head_version_id: int,
-                             total_rows: int, total_size_bytes: int) -> None:
+    def update_dataset_stats(
+            self,
+            dataset_id: int,
+            head_version_id: int,
+            total_rows: int,
+            total_size_bytes: int
+    ) -> None:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
                 """UPDATE datasets
@@ -134,7 +159,10 @@ class DatasetRepository:
             )
             self.db.db_conn.commit()
 
-    def get_version(self, version_id: int) -> Optional[Dict]:
+    def get_version(
+            self,
+            version_id: int
+    ) -> Optional[Dict]:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
                 """SELECT version_id,
@@ -169,12 +197,22 @@ class DatasetRepository:
                 }
             return None
 
-    def create_version(self, dataset_id: int, parent_version_id: Optional[int],
-                       bucket_name: str, object_key: str,
-                       compression_format: str, compressed_size_bytes: int,
-                       uncompressed_size_bytes: int, checksum_sha256: str,
-                       added_rows: int, added_size_bytes: int, cumulative_rows: int,
-                       message: str = "", created_by: str = "") -> int:
+    def create_version(
+            self,
+            dataset_id: int,
+            parent_version_id: Optional[int],
+            bucket_name: str,
+            object_key: str,
+            compression_format: str,
+            compressed_size_bytes: int,
+            uncompressed_size_bytes: int,
+            checksum_sha256: str,
+            added_rows: int,
+            added_size_bytes: int,
+            cumulative_rows: int,
+            message: str = "",
+            created_by: str = ""
+    ) -> int:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO dataset_versions
@@ -193,7 +231,10 @@ class DatasetRepository:
             self.db.db_conn.commit()
             return version_id
 
-    def list_dataset_versions(self, dataset_id: int) -> List[Dict]:
+    def list_dataset_versions(
+            self,
+            dataset_id: int
+    ) -> List[Dict]:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
                 """SELECT version_id,
@@ -219,7 +260,11 @@ class DatasetRepository:
                 for r in cur.fetchall()
             ]
 
-    def get_version_history(self, version_id: int, limit: int = 100) -> List[Dict]:
+    def get_version_history(
+            self,
+            version_id: int,
+            limit: int = 100
+    ) -> List[Dict]:
         with self.db.db_conn.cursor() as cur:
             cur.execute("""
                         WITH RECURSIVE version_lineage AS (SELECT version_id,
@@ -262,8 +307,195 @@ class DatasetRepository:
                 for r in cur.fetchall()
             ]
 
-    def storage_upload(self, local_path: str, object_key: str,
-                       bucket: str = "verivek-datasets") -> bool:
+    # 预处理数据集管理
+    def create_preprocessed(
+            self,
+            dataset_id: int,
+            name: str,
+            source_version_id: Optional[int],
+            parent_preprocessed_id: Optional[int],
+            script_object_key: Optional[str],
+            data_object_key: str,
+            preprocessing_config: Dict,
+            created_by: str = "anonymous"
+    ) -> int:
+        """创建预处理记录"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("""
+                        INSERT INTO datasets_preprocess (dataset_id, name, source_version_id, parent_preprocessed_id,
+                                                         script_object_key, data_object_key, preprocessing_config,
+                                                         status, created_by)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING preprocessed_id
+                        """, (
+                            dataset_id, name, source_version_id, parent_preprocessed_id,
+                            script_object_key, data_object_key, json.dumps(preprocessing_config),
+                            'pending', created_by
+                        ))
+            preprocessed_id = cur.fetchone()[0]
+            self.db.db_conn.commit()
+            return preprocessed_id
+
+    def get_preprocessed(
+            self,
+            preprocessed_id: int
+    ) -> Optional[Dict]:
+        """获取单条预处理记录"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("""
+                        SELECT p.preprocessed_id,
+                               p.dataset_id,
+                               p.name,
+                               p.source_version_id,
+                               p.parent_preprocessed_id,
+                               p.script_object_key,
+                               p.data_object_key,
+                               p.preprocessing_config,
+                               p.status,
+                               p.created_by,
+                               p.created_at,
+                               p.updated_at,
+                               d.dataset_name
+                        FROM datasets_preprocess p
+                                 LEFT JOIN datasets d ON p.dataset_id = d.dataset_id
+                        WHERE p.preprocessed_id = %s
+                        """, (preprocessed_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {
+                "preprocessed_id": row[0], "dataset_id": row[1], "name": row[2],
+                "source_version_id": row[3], "parent_preprocessed_id": row[4],
+                "script_object_key": row[5], "data_object_key": row[6],
+                "preprocessing_config": row[7], "status": row[8],
+                "created_by": row[9], "created_at": row[10], "updated_at": row[11],
+                "dataset_name": row[12]
+            }
+
+    def list_preprocessed(
+            self,
+            dataset_id: int,
+            status_filter: Optional[str] = None
+    ) -> List[Dict]:
+        """获取数据集的所有预处理版本"""
+        with self.db.db_conn.cursor() as cur:
+            sql = """
+                  SELECT preprocessed_id, \
+                         dataset_id, \
+                         name, \
+                         source_version_id, \
+                         parent_preprocessed_id, \
+                         script_object_key, \
+                         data_object_key, \
+                         preprocessing_config, \
+                         status, \
+                         created_by, \
+                         created_at, \
+                         updated_at, \
+                         CASE \
+                             WHEN parent_preprocessed_id IS NULL THEN 'root' \
+                             ELSE 'chained' \
+                             END as node_type
+                  FROM datasets_preprocess
+                  WHERE dataset_id = %s \
+                  """
+            params = [dataset_id]
+
+            if status_filter:
+                sql += " AND status = %s"
+                params.append(status_filter)
+
+            sql += " ORDER BY created_at DESC"
+
+            cur.execute(sql, params)
+            columns = [desc[0] for desc in cur.description]
+            return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+    def update_preprocessed_status(
+            self,
+            preprocessed_id: int,
+            status: str
+    ) -> None:
+        """更新预处理状态（简化版：仅更新状态和更新时间）"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("""
+                        UPDATE datasets_preprocess
+                        SET status     = %s,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE preprocessed_id = %s
+                        """, (status, preprocessed_id))
+            self.db.db_conn.commit()
+
+    def get_preprocessed_lineage(self, preprocessed_id: int) -> List[Dict]:
+        """
+        获取预处理谱系（递归查询，支持链式）
+        【当前】API 限制 parent_preprocessed_id 为 NULL，结果只有两层
+        """
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("""
+                        WITH RECURSIVE lineage AS (SELECT p.preprocessed_id as id,
+                                                          p.name,
+                                                          p.parent_preprocessed_id,
+                                                          p.source_version_id,
+                                                          p.created_at,
+                                                          0                 as depth,
+                                                          'preprocessed'    as node_type
+                                                   FROM datasets_preprocess p
+                                                   WHERE p.preprocessed_id = %s
+
+                                                   UNION ALL
+
+                                                   SELECT p.preprocessed_id,
+                                                          p.name,
+                                                          p.parent_preprocessed_id,
+                                                          p.source_version_id,
+                                                          p.created_at,
+                                                          l.depth + 1,
+                                                          'preprocessed'
+                                                   FROM datasets_preprocess p
+                                                            INNER JOIN lineage l ON p.preprocessed_id = l.parent_preprocessed_id
+                                                   WHERE l.depth < 10
+
+                                                   UNION ALL
+
+                                                   SELECT v.version_id,
+                                                          '原始版本 #' || v.version_id::text,
+                                                          NULL,
+                                                          NULL,
+                                                          v.created_at,
+                                                          l.depth + 1,
+                                                          'source'
+                                                   FROM dataset_versions v
+                                                            INNER JOIN lineage l ON v.version_id = l.source_version_id
+                                                   WHERE l.parent_preprocessed_id IS NULL
+                                                     AND l.node_type = 'preprocessed'
+                                                     AND l.depth = (SELECT MAX(depth) FROM lineage WHERE id = l.id))
+                        SELECT *
+                        FROM lineage
+                        ORDER BY depth DESC
+                        """, (preprocessed_id,))
+
+            rows = cur.fetchall()
+            return [
+                {
+                    "id": row[0],
+                    "name": row[1],
+                    "parent_id": row[2],
+                    "source_version_id": row[3],
+                    "created_at": row[4].isoformat() if row[4] else None,
+                    "depth": row[5],
+                    "type": row[6]
+                }
+                for row in rows
+            ]
+
+    # 对象存储
+    def storage_upload(
+            self,
+            local_path: str,
+            object_key: str,
+            bucket: str = "verivek-datasets"
+    ) -> bool:
         try:
             self.db.s3_client.upload_file(local_path, bucket, object_key)
             return True
@@ -271,7 +503,11 @@ class DatasetRepository:
             print(f"上传失败: {e}")
             return False
 
-    def storage_delete(self, object_key: str, bucket: str = "verivek-datasets") -> bool:
+    def storage_delete(
+            self,
+            object_key: str,
+            bucket: str = "verivek-datasets"
+    ) -> bool:
         try:
             self.db.s3_client.delete_object(Bucket=bucket, Key=object_key)
             return True

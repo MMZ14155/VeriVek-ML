@@ -284,6 +284,91 @@
                             </div>
                         </form>
                     </div>
+
+                    <!-- 预处理面板 -->
+                    <div id="preprocess-upload-panel" class="hidden p-6 space-y-4 overflow-y-auto flex-1 border-t border-white/5 bg-purple-900/10">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="font-semibold text-purple-400">创建预处理版本</h3>
+                            <button onclick="closePreprocessUploadPanel()" class="text-gray-400 hover:text-white">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <form id="preprocess-upload-form" onsubmit="handlePreprocessUpload(event)">
+                            <div class="space-y-4">
+                                <!-- 源版本信息（只读） -->
+                                <div class="p-3 bg-white/5 rounded-lg border border-white/10">
+                                    <div class="text-xs text-gray-400 mb-1">基于原始版本</div>
+                                    <div class="flex items-center space-x-2">
+                                        <div class="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-xs font-bold text-white" id="preprocess-source-version-badge">V1</div>
+                                        <span class="text-sm text-white" id="preprocess-source-version-name">版本 1</span>
+                                    </div>
+                                    <input type="hidden" id="preprocess-source-version-id" name="source_version_id">
+                                </div>
+
+                                <!-- 预处理配置 -->
+                                <div class="space-y-3">
+                                    <div>
+                                        <label class="block text-xs text-gray-400 mb-1">预处理名称 <span class="text-red-400">*</span></label>
+                                        <input type="text" id="preprocess-name" name="name" required
+                                            class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
+                                            placeholder="例如：标准化清洗、数据增强v2">
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs text-gray-400 mb-1">预处理脚本 <span class="text-red-400">*</span> (.py)</label>
+                                        <div id="preprocess-script-drop-zone" class="border-2 border-dashed border-purple-500/30 rounded-xl p-4 text-center hover:border-purple-500/60 hover:bg-purple-500/5 transition-all cursor-pointer relative">
+                                            <input type="file" id="preprocess-script" name="script" accept=".py" required
+                                                class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+
+                                            <div id="preprocess-script-prompt">
+                                                <svg class="w-8 h-8 mx-auto mb-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                                </svg>
+                                                <p class="text-sm text-gray-300">上传 Python 脚本</p>
+                                                <p class="text-xs text-gray-500 mt-1">处理函数需包含 preprocess(data_path) 接口</p>
+                                            </div>
+
+                                            <div id="preprocess-script-selected" class="hidden pointer-events-none">
+                                                <svg class="w-8 h-8 mx-auto mb-2 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                                </svg>
+                                                <p class="text-sm text-emerald-400 font-medium" id="preprocess-script-filename">script.py</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs text-gray-400 mb-1">处理配置 (JSON)</label>
+                                        <textarea id="preprocess-config" name="config" rows="3"
+                                            class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 font-mono resize-none"
+                                            placeholder='{"target_format": "csv", "steps": [{"name": "normalize", "params": {"method": "z-score"}}]}'></textarea>
+                                        <p class="text-xs text-gray-500 mt-1">可选：配置参数会传递给脚本</p>
+                                    </div>
+                                </div>
+
+                                <!-- 进度条 -->
+                                <div id="preprocess-upload-progress" class="hidden space-y-1">
+                                    <div class="flex justify-between text-xs text-gray-400">
+                                        <span>上传进度</span>
+                                        <span id="preprocess-upload-percent" class="text-purple-400">0%</span>
+                                    </div>
+                                    <div class="w-full bg-gray-800 rounded-full h-1.5">
+                                        <div id="preprocess-progress-bar" class="bg-purple-500 h-full rounded-full transition-all" style="width: 0%"></div>
+                                    </div>
+                                </div>
+
+                                <button type="submit" id="preprocess-submit-btn" class="w-full py-2.5 bg-purple-600 hover:bg-purple-500 rounded-lg font-medium text-sm transition-all flex items-center justify-center space-x-2">
+                                    <span>创建预处理任务</span>
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>

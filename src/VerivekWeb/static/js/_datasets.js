@@ -1,6 +1,8 @@
 let currentDatasetId = null;
+let currentSelectedVersion = null;
+let currentPreprocessMap = {};
+let activePopupVersionId = null;
 
-// 数据集导入模态框
 function openDatasetImportModal() {
     const modal = document.getElementById('dataset-import-modal');
     if (modal) {
@@ -113,7 +115,6 @@ async function handleDatasetImport(event) {
     }
 }
 
-// 数据集列表
 async function fetchDatasets() {
     const container = document.getElementById('dataset-list-container');
     if (!container) return;
@@ -183,15 +184,14 @@ function renderDatasetList(datasets) {
     container.innerHTML = html;
 }
 
-// 谱系图可视化
 function showDatasetDetail(datasetId) {
     currentDatasetId = datasetId;
     const modal = document.getElementById('dataset-graph-modal');
     if (modal) {
         modal.classList.remove('hidden');
-        // 重置右侧面板状态
         document.getElementById('version-detail-panel').classList.remove('hidden');
         document.getElementById('version-upload-panel').classList.add('hidden');
+        document.getElementById('preprocess-upload-panel').classList.add('hidden');
         loadDatasetGraph(datasetId);
     }
 }
@@ -208,23 +208,37 @@ async function loadDatasetGraph(datasetId) {
     const datasetName = document.getElementById('graph-dataset-name');
     const datasetMeta = document.getElementById('graph-dataset-meta');
 
-    // 显示加载状态
     if (container) {
         container.innerHTML = '<div class="flex items-center justify-center w-full h-full"><div class="animate-spin w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full"></div></div>';
     }
 
     try {
-        const response = await fetch(`/api/datasets/${datasetId}/versions`);
-        const data = await response.json();
+        const [versionsResponse, preprocessResponse] = await Promise.all([
+            fetch(`/api/datasets/${datasetId}/versions`),
+            fetch(`/api/datasets/${datasetId}/preprocess`)
+        ]);
 
-        if (!data.success) {
-            throw new Error(data.error || '加载失败');
+        const versionsData = await versionsResponse.json();
+        const preprocessData = await preprocessResponse.json();
+
+        if (!versionsData.success) {
+            throw new Error(versionsData.error || '加载失败');
         }
 
-        const dataset = data.dataset;
-        const versions = data.versions || [];
+        const dataset = versionsData.dataset;
+        const versions = versionsData.versions || [];
 
-        // 更新头部信息
+        currentPreprocessMap = {};
+        if (preprocessData.success && preprocessData.versions) {
+            preprocessData.versions.forEach(p => {
+                const vid = p.source_version_id;
+                if (!currentPreprocessMap[vid]) {
+                    currentPreprocessMap[vid] = [];
+                }
+                currentPreprocessMap[vid].push(p);
+            });
+        }
+
         if (datasetName) datasetName.textContent = dataset.dataset_name || '未命名数据集';
         if (datasetMeta) {
             const sizeMB = ((dataset.total_size_bytes || 0) / 1024 / 1024).toFixed(1);
@@ -236,13 +250,9 @@ async function loadDatasetGraph(datasetId) {
             return;
         }
 
-        // 渲染节点
-        renderVersionNodes(versions);
-
-        // 延迟绘制连接线，等待 DOM 渲染完成
+        renderVersionNodes(versions, currentPreprocessMap);
         setTimeout(() => drawVersionConnections(versions), 150);
 
-        // 更新父版本选择器
         const parentSelect = document.getElementById('parent-version-select');
         if (parentSelect) {
             parentSelect.innerHTML = '<option value="latest">最新版本（自动追加）</option>' +
@@ -251,7 +261,6 @@ async function loadDatasetGraph(datasetId) {
 
     } catch (error) {
         console.error('加载数据集图谱失败:', error);
-        // 显示真实错误，不再使用 Mock 数据
         if (container) {
             container.innerHTML = `
                 <div class="text-center text-red-400 p-8">
@@ -266,7 +275,7 @@ async function loadDatasetGraph(datasetId) {
     }
 }
 
-function renderVersionNodes(versions) {
+function renderVersionNodes(versions, preprocessMap = {}) {
     const container = document.getElementById('version-nodes');
     if (!container) return;
     container.innerHTML = '';
@@ -275,27 +284,47 @@ function renderVersionNodes(versions) {
         const isFirst = index === 0;
         const isLast = index === versions.length - 1;
 
-        // 节点大小根据数据量动态调整（最小48px，最大80px）
         const baseSize = 48;
         const addedRows = version.added_rows || 0;
         const nodeSize = Math.min(80, baseSize + Math.sqrt(addedRows) / 2);
 
+        const preprocessedList = preprocessMap[version.version_id] || [];
+        const preprocessedCount = preprocessedList.length;
+
         const node = document.createElement('div');
-        node.className = `relative flex flex-col items-center cursor-pointer group flex-shrink-0`;
+        node.className = `relative flex flex-col items-center cursor-pointer group flex-shrink-0 version-node`;
         node.style.width = `${nodeSize + 20}px`;
-        node.onclick = () => showVersionDetail(version);
+        node.dataset.versionId = version.version_id;
+        node.dataset.hasPreprocess = preprocessedCount > 0;
+
+        // 如果有预处理版本，点击显示弹出层；否则只显示详情
+        if (preprocessedCount > 0) {
+            node.onclick = (e) => {
+                e.stopPropagation();
+                showPreprocessPopup(version, preprocessedList, node);
+            };
+        } else {
+            node.onclick = () => showVersionDetail(version);
+        }
+
+        // 静态指示器（小点）保留，提示用户此节点有预处理
+        let staticIndicator = '';
+        if (preprocessedCount > 0) {
+            staticIndicator = `
+                <div class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-purple-500 border-2 border-[#13131f] z-30"></div>
+            `;
+        }
 
         node.innerHTML = `
-            <!-- 节点圆圈 -->
             <div class="rounded-full ${isLast ? 'bg-emerald-500' : 'bg-indigo-500'} 
                         border-4 border-[#13131f] shadow-lg ${isLast ? 'shadow-emerald-500/30' : 'shadow-indigo-500/30'}
                         flex items-center justify-center transition-all group-hover:scale-110 relative z-20"
                  style="width: ${nodeSize}px; height: ${nodeSize}px;">
                 <span class="text-xs font-bold text-white">${version.version_number}</span>
                 ${isLast ? '<div class="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#13131f]"></div>' : ''}
+                ${!isLast && preprocessedCount > 0 ? staticIndicator : ''}
             </div>
             
-            <!-- 信息卡片 -->
             <div class="mt-4 text-center opacity-60 group-hover:opacity-100 transition-opacity w-32">
                 <div class="text-xs font-medium text-white mb-1">V${version.version_number}</div>
                 <div class="text-[10px] text-gray-400 truncate">${formatRelativeTime(version.created_at)}</div>
@@ -303,21 +332,11 @@ function renderVersionNodes(versions) {
                     ${index === 0 ? '初始 ' : '+'}${(version.added_rows || 0).toLocaleString()} 行
                 </div>
             </div>
-            
-            <!-- Tooltip -->
-            <div class="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30 w-48 hidden group-hover:block">
-                <div class="glass-panel rounded-lg p-3 text-xs border border-white/10 bg-[#1a1a2e] shadow-xl">
-                    <div class="font-medium text-white mb-1 truncate">${version.message || '无描述'}</div>
-                    <div class="text-gray-400">总计: ${(version.rows_count || 0).toLocaleString()} 行</div>
-                    <div class="text-gray-500 mt-1">${new Date(version.created_at).toLocaleString()}</div>
-                </div>
-            </div>
         `;
 
         container.appendChild(node);
     });
 
-    // 添加"新增"占位节点
     const addNode = document.createElement('div');
     addNode.className = 'relative flex flex-col items-center cursor-pointer group ml-8 flex-shrink-0';
     addNode.onclick = openVersionUploadPanel;
@@ -333,76 +352,169 @@ function renderVersionNodes(versions) {
     container.appendChild(addNode);
 }
 
-function drawVersionConnections(versions) {
-    const svg = document.getElementById('graph-svg');
-    const container = document.getElementById('version-nodes');
-    if (!svg || !container) return;
+function showPreprocessPopup(version, preprocessedList, nodeElement) {
+    // 关闭之前的弹出层
+    hidePreprocessPopup();
 
-    const containerRect = container.getBoundingClientRect();
-    // 只选择版本节点（排除最后的"追加"按钮）
-    const nodes = Array.from(container.querySelectorAll(':scope > div')).slice(0, -1);
+    activePopupVersionId = version.version_id;
+    currentSelectedVersion = version;
 
-    // 设置SVG尺寸为滚动区域大小
-    svg.setAttribute('width', container.scrollWidth);
-    svg.setAttribute('height', containerRect.height);
-    svg.innerHTML = '';
+    const displayCount = Math.min(preprocessedList.length, 3);
+    const isLast = nodeElement.querySelector('.bg-emerald-500') !== null;
+    const nodeSize = nodeElement.querySelector('.rounded-full').offsetWidth;
 
-    if (nodes.length < 2) return;
+    // 创建弹出容器
+    const popup = document.createElement('div');
+    popup.id = 'preprocess-popup';
+    popup.className = 'absolute z-50 flex flex-col items-center';
 
-    // 绘制节点间的连接线
-    for (let i = 0; i < nodes.length - 1; i++) {
-        const current = nodes[i];
-        const next = nodes[i + 1];
+    // 定位计算：在节点正上方
+    const rect = nodeElement.getBoundingClientRect();
+    const containerRect = document.getElementById('version-nodes').getBoundingClientRect();
+    const relativeLeft = rect.left - containerRect.left + rect.width / 2;
+    const relativeTop = rect.top - containerRect.top;
 
-        const currentRect = current.getBoundingClientRect();
-        const nextRect = next.getBoundingClientRect();
+    popup.style.left = `${relativeLeft}px`;
+    popup.style.top = `${relativeTop - 10}px`; // 稍微重叠，视觉上连接更紧密
+    popup.style.transform = 'translate(-50%, -100%)';
 
-        // 相对于container的坐标
-        const x1 = currentRect.left - containerRect.left + currentRect.width / 2;
-        const y1 = currentRect.top - containerRect.top + currentRect.height / 2;
-        const x2 = nextRect.left - containerRect.left + nextRect.width / 2;
-        const y2 = nextRect.top - containerRect.top + nextRect.height / 2;
+    // 生成预处理节点HTML（倒序，最新的在上面）
+    const preprocessNodes = preprocessedList.slice(0, displayCount).reverse().map((p, idx) => `
+        <div class="w-10 h-10 rounded-full bg-purple-500 border-3 border-[#13131f] shadow-lg shadow-purple-500/40 
+                    flex items-center justify-center transform hover:scale-110 transition-transform cursor-pointer mb-1
+                    preprocess-popup-item"
+             data-preprocessed-id="${p.preprocessed_id}"
+             title="${p.name} (${p.status || 'pending'})">
+            <span class="text-[10px] font-bold text-white">P${preprocessedList.length - idx}</span>
+        </div>
+    `).join('');
 
-        // 判断颜色
-        const isLastConnection = (i === nodes.length - 2);
-        const lineColor = isLastConnection ? '#10b981' : '#6366f1';
+    // 如果超过3个，添加"+n"指示器
+    const moreIndicator = preprocessedList.length > 3 ? `
+        <div class="w-8 h-8 rounded-full bg-purple-600 border-2 border-[#13131f] shadow-lg 
+                    flex items-center justify-center mt-1">
+            <span class="text-[9px] font-bold text-white">+${preprocessedList.length - 3}</span>
+        </div>
+    ` : '';
 
-        // 创建路径（水平连接的贝塞尔曲线）
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        const controlOffset = Math.abs(x2 - x1) / 2;
-        const d = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
+    popup.innerHTML = `
+        <div class="flex flex-col items-center p-2 bg-[#13131f]/90 rounded-2xl border border-purple-500/30 backdrop-blur-sm shadow-2xl">
+            ${moreIndicator}
+            ${preprocessNodes}
+            <div class="w-0.5 h-3 bg-purple-500/50 my-1"></div>
+        </div>
+    `;
 
-        path.setAttribute('d', d);
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', lineColor);
-        path.setAttribute('stroke-width', '2');
-        path.setAttribute('stroke-dasharray', '5,5');
-        path.setAttribute('opacity', '0.6');
+    // 添加点击事件：点击预处理节点打开详情面板
+    popup.querySelectorAll('.preprocess-popup-item').forEach((item, idx) => {
+        item.onclick = (e) => {
+            e.stopPropagation();
+            hidePreprocessPopup();
+            showVersionDetail(version); // 先显示版本详情
+            // 可以在这里添加高亮特定预处理版本的逻辑
+        };
+    });
 
-        svg.appendChild(path);
+    document.getElementById('version-nodes').appendChild(popup);
 
-        // 添加流向箭头
-        const angle = Math.atan2(y2 - y1, x2 - x1);
-        const arrowSize = 5;
-        const arrowX = x2 - (nextRect.width/2 + 8) * Math.cos(angle);
-        const arrowY = y2 - (nextRect.height/2 + 8) * Math.sin(angle);
-
-        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        arrow.setAttribute('points', `${arrowX},${arrowY-arrowSize} ${arrowX+arrowSize*2},${arrowY} ${arrowX},${arrowY+arrowSize}`);
-        arrow.setAttribute('fill', lineColor);
-        arrow.setAttribute('opacity', '0.8');
-        const rotation = angle * 180 / Math.PI;
-        arrow.setAttribute('transform', `rotate(${rotation}, ${arrowX}, ${arrowY})`);
-        svg.appendChild(arrow);
-    }
+    // 动画效果
+    requestAnimationFrame(() => {
+        popup.style.opacity = '0';
+        popup.style.transform = 'translate(-50%, -90%)';
+        popup.style.transition = 'all 0.2s ease-out';
+        requestAnimationFrame(() => {
+            popup.style.opacity = '1';
+            popup.style.transform = 'translate(-50%, -100%)';
+        });
+    });
 }
 
+function hidePreprocessPopup() {
+    const existing = document.getElementById('preprocess-popup');
+    if (existing) {
+        existing.style.opacity = '0';
+        existing.style.transform = 'translate(-50%, -90%)';
+        setTimeout(() => existing.remove(), 200);
+    }
+    activePopupVersionId = null;
+}
+
+// 点击其他地方关闭弹出层
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#preprocess-popup') && !e.target.closest('.version-node')) {
+        hidePreprocessPopup();
+    }
+});
+
+// ESC键关闭弹出层
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        hidePreprocessPopup();
+    }
+});
+
 function showVersionDetail(version) {
+    currentSelectedVersion = version;
+
     const panel = document.getElementById('version-detail-panel');
     if (!panel) return;
 
     const date = new Date(version.created_at);
     const isInitial = version.version_number === 1;
+
+    const preprocessedList = currentPreprocessMap[version.version_id] || [];
+    const hasPreprocessed = preprocessedList.length > 0;
+
+    let preprocessHtml = '';
+    if (hasPreprocessed) {
+        preprocessHtml = `
+            <div class="mt-4 pt-4 border-t border-white/5">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="text-xs text-gray-400">预处理后版本</div>
+                    <span class="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
+                        ${preprocessedList.length} 个
+                    </span>
+                </div>
+                <div class="space-y-2 max-h-32 overflow-y-auto">
+                    ${preprocessedList.slice(0, 3).map((p, idx) => `
+                        <div class="flex items-center justify-between p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                            <div class="flex items-center space-x-2">
+                                <div class="w-2 h-2 rounded-full ${p.status === 'completed' ? 'bg-emerald-400' : 'bg-yellow-400'}"></div>
+                                <span class="text-xs text-purple-200 font-medium truncate w-24">${p.name}</span>
+                            </div>
+                            <span class="text-[10px] text-gray-500">${p.status || 'pending'}</span>
+                        </div>
+                    `).join('')}
+                    ${preprocessedList.length > 3 ? `
+                        <div class="text-xs text-center text-gray-500 pt-1">
+                            还有 ${preprocessedList.length - 3} 个预处理版本...
+                        </div>
+                    ` : ''}
+                </div>
+                <button onclick="openPreprocessUploadPanel()" 
+                    class="w-full mt-3 py-2 bg-purple-600/50 hover:bg-purple-600 rounded-lg text-xs text-white transition-colors border border-purple-500/30 flex items-center justify-center space-x-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                    </svg>
+                    <span>添加预处理版本</span>
+                </button>
+            </div>
+        `;
+    } else {
+        preprocessHtml = `
+            <div class="mt-4 pt-4 border-t border-white/5">
+                <div class="text-xs text-gray-400 mb-3">预处理后数据</div>
+                <button onclick="openPreprocessUploadPanel('${version.version_id}')" 
+                    class="w-full py-3 bg-white/5 hover:bg-purple-500/20 hover:border-purple-500/30 border border-dashed border-white/20 rounded-lg text-sm text-gray-400 hover:text-purple-300 transition-all flex items-center justify-center space-x-2 group">
+                    <svg class="w-5 h-5 group-hover:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                    </svg>
+                    <span>创建预处理版本</span>
+                </button>
+                <p class="text-xs text-gray-500 text-center mt-2">上传脚本处理此版本数据</p>
+            </div>
+        `;
+    }
 
     panel.innerHTML = `
         <div class="space-y-4">
@@ -453,7 +565,9 @@ function showVersionDetail(version) {
                 </div>
             </div>
             
-            <div class="pt-4 mt-4 border-t border-white/5 space-y-2">
+            ${preprocessHtml}
+            
+            <div class="pt-4 border-t border-white/5 space-y-2">
                 <button onclick="useVersionForTraining('${version.version_id}')" 
                     class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium transition-colors">
                     使用此版本训练
@@ -467,7 +581,133 @@ function showVersionDetail(version) {
     `;
 }
 
-// 版本上传面板
+function openPreprocessUploadPanel(versionId) {
+    const targetVersionId = versionId || (currentSelectedVersion && currentSelectedVersion.version_id);
+    if (!targetVersionId) {
+        alert('请先选择一个原始数据版本');
+        return;
+    }
+
+    if (currentSelectedVersion) {
+        document.getElementById('preprocess-source-version-badge').textContent = 'V' + currentSelectedVersion.version_number;
+        document.getElementById('preprocess-source-version-name').textContent = '版本 ' + currentSelectedVersion.version_number;
+        document.getElementById('preprocess-source-version-id').value = currentSelectedVersion.version_id;
+    } else {
+        document.getElementById('preprocess-source-version-id').value = targetVersionId;
+    }
+
+    resetPreprocessUploadUI();
+
+    document.getElementById('version-detail-panel').classList.add('hidden');
+    document.getElementById('version-upload-panel').classList.add('hidden');
+    document.getElementById('preprocess-upload-panel').classList.remove('hidden');
+}
+
+function closePreprocessUploadPanel() {
+    document.getElementById('preprocess-upload-panel').classList.add('hidden');
+    document.getElementById('version-detail-panel').classList.remove('hidden');
+}
+
+function resetPreprocessUploadUI() {
+    const form = document.getElementById('preprocess-upload-form');
+    const prompt = document.getElementById('preprocess-script-prompt');
+    const selected = document.getElementById('preprocess-script-selected');
+    const progress = document.getElementById('preprocess-upload-progress');
+    const submitBtn = document.getElementById('preprocess-submit-btn');
+
+    if (form) form.reset();
+    if (prompt) prompt.classList.remove('hidden');
+    if (selected) selected.classList.add('hidden');
+    if (progress) progress.classList.add('hidden');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<span>创建预处理任务</span><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>`;
+    }
+}
+
+function handlePreprocessScriptSelect(event) {
+    const file = event.target.files[0];
+    if (file) {
+        document.getElementById('preprocess-script-prompt').classList.add('hidden');
+        document.getElementById('preprocess-script-selected').classList.remove('hidden');
+        document.getElementById('preprocess-script-filename').textContent = file.name;
+
+        const nameInput = document.getElementById('preprocess-name');
+        if (!nameInput.value) {
+            nameInput.value = file.name.replace('.py', '').replace(/[_-]/g, ' ');
+        }
+    }
+}
+
+async function handlePreprocessUpload(event) {
+    event.preventDefault();
+
+    if (!currentDatasetId) {
+        alert('未选择数据集');
+        return;
+    }
+
+    const scriptFile = document.getElementById('preprocess-script').files[0];
+    const name = document.getElementById('preprocess-name').value;
+    const sourceVersionId = document.getElementById('preprocess-source-version-id').value;
+    const config = document.getElementById('preprocess-config').value || '{}';
+
+    if (!scriptFile) {
+        alert('请上传预处理脚本');
+        return;
+    }
+
+    if (!name) {
+        alert('请输入预处理名称');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('script', scriptFile);
+    formData.append('name', name);
+    formData.append('source_version_id', sourceVersionId);
+    formData.append('config', config);
+
+    const progressBar = document.getElementById('preprocess-progress-bar');
+    const percentText = document.getElementById('preprocess-upload-percent');
+    const submitBtn = document.getElementById('preprocess-submit-btn');
+    const progressContainer = document.getElementById('preprocess-upload-progress');
+
+    if (progressContainer) progressContainer.classList.remove('hidden');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span>处理中...</span>';
+    }
+
+    try {
+        const response = await fetch(`/api/datasets/${currentDatasetId}/preprocess`, {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            setTimeout(() => {
+                closePreprocessUploadPanel();
+                loadDatasetGraph(currentDatasetId);
+            }, 500);
+        } else {
+            throw new Error(result.error || '创建失败');
+        }
+    } catch (error) {
+        console.error('预处理上传失败:', error);
+        alert('创建预处理任务失败: ' + error.message);
+
+        if (progressBar) progressBar.style.width = '0%';
+        if (percentText) percentText.textContent = '0%';
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = `<span>创建预处理任务</span><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>`;
+        }
+    }
+}
+
 function openVersionUploadPanel() {
     document.getElementById('version-detail-panel').classList.add('hidden');
     document.getElementById('version-upload-panel').classList.remove('hidden');
@@ -488,11 +728,10 @@ async function handleVersionUpload(event) {
         return;
     }
 
-    const form = event.target;
     const files = document.getElementById('version-files').files;
     const message = document.getElementById('version-message').value || '追加数据版本';
     const parentVersion = document.getElementById('parent-version-select').value;
-    const updateMode = form.querySelector('input[name="update_mode"]:checked')?.value || 'append';
+    const updateMode = document.querySelector('input[name="update_mode"]:checked')?.value || 'append';
 
     if (files.length === 0) {
         alert('请选择要追加的文件');
@@ -504,7 +743,6 @@ async function handleVersionUpload(event) {
     const submitBtn = document.getElementById('version-submit-btn');
     const progressContainer = document.getElementById('version-upload-progress');
 
-    // 显示进度条
     if (progressContainer) progressContainer.classList.remove('hidden');
     if (submitBtn) {
         submitBtn.disabled = true;
@@ -512,7 +750,6 @@ async function handleVersionUpload(event) {
     }
 
     try {
-        // 构造 FormData
         const formData = new FormData();
         for (let i = 0; i < files.length; i++) {
             const relativePath = files[i].webkitRelativePath || files[i].name;
@@ -522,7 +759,6 @@ async function handleVersionUpload(event) {
         formData.append('parent_version', parentVersion);
         formData.append('update_mode', updateMode);
 
-        // 使用 XMLHttpRequest 以便获取上传进度
         const uploadPromise = new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
 
@@ -561,13 +797,11 @@ async function handleVersionUpload(event) {
 
         const result = await uploadPromise;
 
-        // 上传完成，刷新谱系图
         setTimeout(() => {
             closeVersionUploadPanel();
             loadDatasetGraph(currentDatasetId);
-            // 显示成功详情
             const firstVersion = document.querySelector('#version-nodes > div');
-            if (firstVersion) firstVersion.click(); // 自动选中最新的
+            if (firstVersion) firstVersion.click();
         }, 300);
 
     } catch (error) {
@@ -583,6 +817,59 @@ async function handleVersionUpload(event) {
     }
 }
 
+function drawVersionConnections(versions) {
+    const svg = document.getElementById('graph-svg');
+    const container = document.getElementById('version-nodes');
+    if (!svg || !container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const nodes = Array.from(container.querySelectorAll(':scope > div')).slice(0, -1);
+
+    svg.setAttribute('width', container.scrollWidth);
+    svg.setAttribute('height', containerRect.height);
+    svg.innerHTML = '';
+
+    if (nodes.length < 2) return;
+
+    for (let i = 0; i < nodes.length - 1; i++) {
+        const current = nodes[i];
+        const next = nodes[i + 1];
+
+        const currentRect = current.getBoundingClientRect();
+        const nextRect = next.getBoundingClientRect();
+
+        const x1 = currentRect.left - containerRect.left + currentRect.width / 2;
+        const y1 = currentRect.top - containerRect.top + currentRect.height / 2;
+        const x2 = nextRect.left - containerRect.left + nextRect.width / 2;
+        const y2 = nextRect.top - containerRect.top + nextRect.height / 2;
+
+        const isLastConnection = (i === nodes.length - 2);
+        const lineColor = isLastConnection ? '#10b981' : '#6366f1';
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const controlOffset = Math.abs(x2 - x1) / 2;
+        path.setAttribute('d', `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', lineColor);
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('stroke-dasharray', '5,5');
+        path.setAttribute('opacity', '0.6');
+        svg.appendChild(path);
+
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const arrowSize = 5;
+        const arrowX = x2 - (nextRect.width/2 + 8) * Math.cos(angle);
+        const arrowY = y2 - (nextRect.height/2 + 8) * Math.sin(angle);
+
+        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        arrow.setAttribute('points', `${arrowX},${arrowY-arrowSize} ${arrowX+arrowSize*2},${arrowY} ${arrowX},${arrowY+arrowSize}`);
+        arrow.setAttribute('fill', lineColor);
+        arrow.setAttribute('opacity', '0.8');
+        arrow.setAttribute('transform', `rotate(${angle * 180 / Math.PI}, ${arrowX}, ${arrowY})`);
+        svg.appendChild(arrow);
+    }
+}
+
 function downloadVersion(versionId) {
     console.log('下载版本:', versionId);
     alert('下载功能开发中...\n版本ID: ' + versionId);
@@ -591,8 +878,6 @@ function downloadVersion(versionId) {
 function useVersionForTraining(versionId) {
     window.location.href = `/training?dataset=${currentDatasetId}&version=${versionId}`;
 }
-
-// ==================== 辅助函数 ====================
 
 function formatRelativeTime(dateString) {
     const date = new Date(dateString);
@@ -618,27 +903,31 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// 事件监听和初始化
 document.addEventListener('DOMContentLoaded', function() {
-    // 初始加载数据集列表
     fetchDatasets();
 
-    // 绑定文件选择事件
     const fileInput = document.getElementById('dataset-files');
     if (fileInput) {
         fileInput.addEventListener('change', handleDatasetFileSelect);
     }
 
-    // ESC 键关闭数据集模态框
+    const preprocessScriptInput = document.getElementById('preprocess-script');
+    if (preprocessScriptInput) {
+        preprocessScriptInput.addEventListener('change', handlePreprocessScriptSelect);
+    }
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             closeDatasetImportModal();
             closeDatasetGraph();
+            const preprocessPanel = document.getElementById('preprocess-upload-panel');
+            if (preprocessPanel && !preprocessPanel.classList.contains('hidden')) {
+                closePreprocessUploadPanel();
+            }
         }
     });
 });
 
-// 监听窗口大小变化，重绘连接线
 window.addEventListener('resize', () => {
     const modal = document.getElementById('dataset-graph-modal');
     if (modal && !modal.classList.contains('hidden') && currentDatasetId) {

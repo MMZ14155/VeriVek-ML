@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional
 import tempfile
+import time
 import shutil
 import os
 import zipfile
@@ -124,6 +125,64 @@ class DatasetManager:
                 })
 
         return patches
+
+    def preprocess_dataset(
+            self,
+            dataset_id: int,
+            name: str,
+            script_path: str,
+            source_version_id: Optional[int] = None,
+            parent_preprocessed_id: Optional[int] = None,
+            config: Optional[Dict] = None,
+            created_by: str = "anonymous"
+    ) -> int:
+        """
+        创建预处理任务
+        【当前】parent_preprocessed_id 仅用于内部测试，API 层当前不传
+        """
+        if parent_preprocessed_id is not None:
+            parent = self.repo.get_preprocessed(parent_preprocessed_id)
+            if not parent:
+                raise ValueError(f"父预处理节点 {parent_preprocessed_id} 不存在")
+            if parent['dataset_id'] != dataset_id:
+                raise ValueError("链式预处理必须在同一数据集内进行")
+
+        ts = int(time.time())
+        script_key = None
+        if script_path and os.path.exists(script_path):
+            script_key = f"{dataset_id}/scripts/{name}_{ts}.py"
+            if not self.repo.storage_upload(script_path, script_key):
+                raise RuntimeError("脚本上传失败")
+
+        data_key = f"{dataset_id}/preprocessed/{name}_{ts}.zip"
+
+        preprocessed_id = self.repo.create_preprocessed(
+            dataset_id=dataset_id,
+            name=name,
+            source_version_id=source_version_id,
+            parent_preprocessed_id=parent_preprocessed_id,
+            script_object_key=script_key,
+            data_object_key=data_key,
+            preprocessing_config=config or {},
+            created_by=created_by
+        )
+
+        return preprocessed_id
+
+    def get_preprocessed_versions(self, dataset_id: int) -> List[Dict]:
+        """获取预处理版本列表"""
+        return self.repo.list_preprocessed(dataset_id)
+
+    def get_preprocessed_detail(self, preprocessed_id: int) -> Dict:
+        """获取预处理详情"""
+        result = self.repo.get_preprocessed(preprocessed_id)
+        if result:
+            result['lineage'] = self.repo.get_preprocessed_lineage(preprocessed_id)
+        return result
+
+    def get_preprocessed_lineage(self, preprocessed_id: int) -> List[Dict]:
+        """获取预处理谱系"""
+        return self.repo.get_preprocessed_lineage(preprocessed_id)
 
     def extract_dataset_version(
             self,

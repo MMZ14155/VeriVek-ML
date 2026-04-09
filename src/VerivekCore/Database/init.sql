@@ -48,6 +48,26 @@ CREATE TABLE IF NOT EXISTS dataset_versions (
     CONSTRAINT no_self_parent CHECK (version_id != parent_version_id)
 );
 
+CREATE TABLE IF NOT EXISTS datasets_preprocess (
+    preprocessed_id SERIAL PRIMARY KEY,
+    dataset_id INTEGER NOT NULL REFERENCES datasets(dataset_id) ON DELETE CASCADE,
+    source_version_id INTEGER REFERENCES dataset_versions(version_id),
+
+    -- 当前 API 层不开放链式预处理支持的参数
+    parent_preprocessed_id INTEGER REFERENCES datasets_preprocess(preprocessed_id),
+
+    name VARCHAR(100) NOT NULL,
+    script_object_key VARCHAR(255),
+    data_object_key VARCHAR(255) NOT NULL,
+    preprocessing_config JSONB DEFAULT '{}',
+    status VARCHAR(20) DEFAULT 'pending',
+    created_by VARCHAR(50) DEFAULT 'anonymous',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT no_self_parent_preprocessed CHECK (preprocessed_id != parent_preprocessed_id)
+);
+
 CREATE TABLE IF NOT EXISTS models (
     model_id SERIAL PRIMARY KEY,
     model_name VARCHAR(20),

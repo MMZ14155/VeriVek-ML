@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 from flask import Flask, jsonify, request, render_template, redirect, url_for
 from werkzeug.utils import secure_filename
 import tempfile
@@ -222,6 +223,79 @@ def create_dataset_version(dataset_id):
     except Exception as e:
         import traceback
         print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/datasets/<int:dataset_id>/preprocess', methods=['POST'])
+def create_preprocess_job(dataset_id: int):
+    """
+    创建预处理任务
+    【当前限制】仅支持基于原始数据版本（source_version_id），不提供链式参数
+    """
+    try:
+        script = request.files.get('script')
+        name = request.form.get('name', '').strip()
+        source_version = request.form.get('source_version_id', type=int)
+        config = json.loads(request.form.get('config', '{}'))
+
+        if not name or not script:
+            return jsonify({'error': '名称和脚本不能为空'}), 400
+
+        # 【关键】完全不读取 parent_preprocessed_id，也不提供此参数给 Manager
+        # 未来启用时，只需添加：
+        # parent_id = request.form.get('parent_preprocessed_id', type=int)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            script_path = os.path.join(temp_dir, secure_filename(script.filename))
+            script.save(script_path)
+
+            # 调用 Manager，不传 parent_preprocessed_id（默认为 None）
+            preprocessed_id = dataset_manager.preprocess_dataset(
+                dataset_id=dataset_id,
+                name=name,
+                script_path=script_path,
+                source_version_id=source_version,  # 仅支持基于原始版本
+                # parent_preprocessed_id 不传，强制为 None
+                config=config,
+                created_by=request.form.get('created_by', 'anonymous')
+            )
+
+            return jsonify({
+                'success': True,
+                'preprocessed_id': preprocessed_id,
+                'message': '预处理任务已创建（基于原始数据版本）'
+            })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/datasets/<int:dataset_id>/preprocess', methods=['GET'])
+def get_preprocess_versions(dataset_id: int):
+    """获取预处理版本列表（包含链式结构信息，但当前所有 parent 为 NULL）"""
+    try:
+        versions = dataset_manager.get_preprocessed_versions(dataset_id)
+        return jsonify({
+            'success': True,
+            'dataset_id': dataset_id,
+            'versions': versions,
+            'note': '当前版本仅支持基于原始数据的预处理'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/preprocess/<int:preprocessed_id>/lineage', methods=['GET'])
+def get_preprocess_lineage(preprocessed_id: int):
+    """获取预处理谱系（当前为单层，链式功能预留）"""
+    try:
+        lineage = dataset_manager.get_preprocessed_lineage(preprocessed_id)
+        return jsonify({
+            'success': True,
+            'preprocessed_id': preprocessed_id,
+            'lineage': lineage,
+            'is_chain': len([n for n in lineage if n['type'] == 'preprocessed']) > 1
+        })
+    except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/models', methods=['GET'])

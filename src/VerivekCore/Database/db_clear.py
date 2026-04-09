@@ -2,7 +2,6 @@ import json
 import os
 import psycopg2
 
-
 def clear_database():
     """清除 PostgreSQL 数据库中的所有内容（不依赖外部 DbClient）"""
     cfg = _load_config()
@@ -17,7 +16,6 @@ def clear_database():
     if verbose:
         print("数据库清理完成")
 
-
 def _load_config(cfg_dir="configs", cfg_file="config.json"):
     """加载配置文件"""
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
@@ -26,7 +24,6 @@ def _load_config(cfg_dir="configs", cfg_file="config.json"):
         raise FileNotFoundError(f"配置文件不存在: {cfg_path}")
     with open(cfg_path, "r", encoding="utf-8") as f:
         return json.load(f)
-
 
 def _connect_db(db_cfg):
     """创建 PostgreSQL 连接"""
@@ -42,7 +39,6 @@ def _connect_db(db_cfg):
     except Exception as e:
         print(f"数据库连接失败: {e}")
         raise
-
 
 def _clear_database(conn, verbose):
     """
@@ -69,7 +65,6 @@ def _clear_database(conn, verbose):
         raise
     finally:
         cursor.close()
-
 
 if __name__ == "__main__":
     clear_database()
