@@ -126,6 +126,10 @@ CREATE TABLE IF NOT EXISTS trainings (
     model_commit_id INTEGER NOT NULL REFERENCES model_commits(commit_id),
     branch_id INTEGER REFERENCES model_branches(branch_id),
 
+    -- 关联数据源（二选一，互斥且必须选其一）
+    dataset_id INTEGER REFERENCES datasets(dataset_id) ON DELETE SET NULL,
+    preprocessed_id INTEGER REFERENCES datasets_preprocess(preprocessed_id) ON DELETE SET NULL,
+
     -- 超参数配置
     hyperparameters JSONB NOT NULL DEFAULT '{}',
 
@@ -155,7 +159,12 @@ CREATE TABLE IF NOT EXISTS trainings (
     exit_code INTEGER,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_exclusive_data_source CHECK (
+        (dataset_id IS NOT NULL AND preprocessed_id IS NULL) OR
+        (dataset_id IS NULL AND preprocessed_id IS NOT NULL)
+    )
 );
 
 CREATE TABLE IF NOT EXISTS training_weights (

@@ -1,21 +1,24 @@
 import os
 import sys
 import json
-from flask import Flask, jsonify, request, render_template, redirect, url_for
+import mimetypes
+from flask import Flask, jsonify, request, render_template, redirect, url_for, send_file
 from werkzeug.utils import secure_filename
 import tempfile
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from VerivekCore import get_gpu_info, get_total_usage
 from VerivekCore.Database.db_client import DbClient
-from VerivekCore.ModelManager.model_manager import ModelManager
 from VerivekCore.DatasetManager.dataset_manager import DatasetManager
+from VerivekCore.ModelManager.model_manager import ModelManager
+from VerivekCore.Training.training_manager import TrainingManager
+from VerivekCore.Training.gpu_monitor import get_gpu_info, get_total_usage, get_ac_status
 
 app = Flask(__name__)
 
 db_client = DbClient()
 dataset_manager = DatasetManager(db_client)
 model_manager = ModelManager(db_client)
+training_manager = TrainingManager(db_client)
 
 ALLOWED_EXTENSIONS = {'py'}
 
@@ -46,6 +49,10 @@ def models():
 def training():
     """训练配置页面"""
     return render_template('_training.html')
+
+@app.route('/model-builder')
+def model_builder():
+    return render_template('_model_builder.html')
 
 @app.route('/api/datasets', methods=['GET'])
 def get_datasets():
@@ -515,17 +522,374 @@ def get_model_history(model_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/training/start', methods=['POST'])
-def start_training():
-    data = request.json
-    # 解析 dataset_id, model_id, hyperparameters
-    # 启动训练任务，返回 task_id
-    pass
+@app.route('/api/trainings', methods=['POST'])
+def create_training():
+    """创建新的训练任务（支持原始数据集或预处理数据集，互斥）"""
+    try:
+        data = request.get_json()
 
-@app.route('/api/training/status/<task_id>', methods=['GET'])
-def get_training_status(task_id):
-    # 返回训练进度、loss、准确率等
-    pass
+        if not data:
+            return jsonify({'success': False, 'error': '请求体不能为空'}), 400
+
+        # 参数校验
+        training_name = data.get('training_name', '').strip()
+        model_commit_id = data.get('model_commit_id')
+        dataset_id = data.get('dataset_id')
+        preprocessed_id = data.get('preprocessed_id')
+        hyperparameters = data.get('hyperparameters', {})
+
+        if not training_name:
+            return jsonify({'success': False, 'error': '训练名称不能为空'}), 400
+
+        if not model_commit_id:
+            return jsonify({'success': False, 'error': '必须选择模型版本'}), 400
+
+        # 数据源互斥性校验（必须且只能选一个）
+        if not dataset_id and not preprocessed_id:
+            return jsonify({'success': False, 'error': '必须选择原始数据集或预处理数据集'}), 400
+        if dataset_id and preprocessed_id:
+            return jsonify({'success': False, 'error': '不能同时选择原始数据集和预处理数据集'}), 400
+
+        # 验证模型提交是否存在
+        commit_info = model_manager.repo.get_commit(model_commit_id)
+        if not commit_info:
+            return jsonify({'success': False, 'error': '指定的模型版本不存在'}), 404
+
+        # 验证数据源有效性
+        if dataset_id:
+            dataset = dataset_manager.get_dataset_by_id(dataset_id)
+            if not dataset:
+                return jsonify({'success': False, 'error': '指定的数据集不存在'}), 404
+        elif preprocessed_id:
+            preprocessed = dataset_manager.repo.get_preprocessed(preprocessed_id)
+            if not preprocessed:
+                return jsonify({'success': False, 'error': '指定的预处理数据集不存在'}), 404
+
+        # 创建训练（传递数据源参数）
+        training_id = training_manager.create_training(
+            training_name=training_name,
+            model_commit_id=model_commit_id,
+            hyperparameters=hyperparameters,
+            dataset_id=dataset_id,
+            preprocessed_id=preprocessed_id,
+            description=data.get('description', ''),
+            created_by=data.get('created_by', 'anonymous'),
+            branch_id=commit_info.get('branch_id'),
+            gpu_type=data.get('gpu_type', ''),
+            gpu_count=data.get('gpu_count', 0)
+        )
+
+        # 可选：立即启动训练
+        if data.get('auto_start'):
+            try:
+                training_manager.start_training(training_id)
+            except Exception as start_err:
+                return jsonify({
+                    'success': True,
+                    'training_id': training_id,
+                    'warning': f'训练创建成功但启动失败: {str(start_err)}'
+                }), 201
+
+        return jsonify({
+            'success': True,
+            'training_id': training_id,
+            'data_source_type': 'raw' if dataset_id else 'preprocessed',
+            'message': '训练任务创建成功'
+        }), 201
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/trainings', methods=['GET'])
+def get_trainings():
+    """获取训练任务列表，支持状态筛选，包含数据源信息"""
+    try:
+        status_filter = request.args.get('status')
+        model_commit_id = request.args.get('model_commit_id', type=int)
+        data_source_type = request.args.get('data_source_type')  # 可选筛选：raw | preprocessed
+
+        # 获取基础列表
+        trainings = training_manager.list_trainings(
+            model_commit_id=model_commit_id,
+            status_filter=status_filter
+        )
+
+        # 补充关联信息（模型名称、数据源名称）
+        enriched_trainings = []
+        for t in trainings:
+            # 获取模型信息
+            model_info = model_manager.repo.get_commit(t['model_commit_id']) if t.get('model_commit_id') else None
+            if model_info:
+                model_detail = model_manager.repo.get_model_by_id(model_info['model_id'])
+                t['model_name'] = model_detail['model_name'] if model_detail else 'Unknown'
+            else:
+                t['model_name'] = 'Unknown'
+
+            # 获取数据源信息（区分原始数据集和预处理数据集）
+            t['data_source_type'] = None
+            t['dataset_name'] = 'Unknown'
+            t['dataset_id'] = t.get('dataset_id')  # 确保返回ID供前端使用
+            t['preprocessed_id'] = t.get('preprocessed_id')
+
+            if t.get('dataset_id'):
+                # 原始数据集
+                dataset = dataset_manager.get_dataset_by_id(t['dataset_id'])
+                if dataset:
+                    t['dataset_name'] = dataset['dataset_name']
+                    t['data_source_type'] = 'raw'
+            elif t.get('preprocessed_id'):
+                # 预处理数据集
+                preprocessed = dataset_manager.repo.get_preprocessed(t['preprocessed_id'])
+                if preprocessed:
+                    t['dataset_name'] = preprocessed['name']
+                    t['data_source_type'] = 'preprocessed'
+                    # 补充关联的原始数据集名称（便于展示谱系）
+                    if preprocessed.get('dataset_id'):
+                        parent_dataset = dataset_manager.get_dataset_by_id(preprocessed['dataset_id'])
+                        t['parent_dataset_name'] = parent_dataset['dataset_name'] if parent_dataset else None
+
+            # 数据源类型筛选
+            if data_source_type and t['data_source_type'] != data_source_type:
+                continue
+
+            enriched_trainings.append(t)
+
+        return jsonify({
+            'success': True,
+            'trainings': enriched_trainings,
+            'total': len(enriched_trainings)
+        })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/trainings/<int:training_id>', methods=['GET'])
+def get_training_detail(training_id):
+    """获取训练任务详情（含权重信息、数据源详情）"""
+    try:
+        detail = training_manager.get_training_detail(training_id)
+        training = detail.get('training', {})
+
+        # 补充模型信息
+        if training.get('model_commit_id'):
+            commit = model_manager.repo.get_commit(training['model_commit_id'])
+            if commit:
+                model = model_manager.repo.get_model_by_id(commit['model_id'])
+                detail['model_info'] = {
+                    'model_name': model['model_name'] if model else 'Unknown',
+                    'model_id': commit['model_id'],
+                    'commit_message': commit.get('message', '')
+                }
+
+        # 补充数据源详细信息
+        detail['data_source'] = None
+        if training.get('dataset_id'):
+            dataset = dataset_manager.get_dataset_by_id(training['dataset_id'])
+            if dataset:
+                detail['data_source'] = {
+                    'type': 'raw',
+                    'dataset_id': training['dataset_id'],
+                    'dataset_name': dataset['dataset_name'],
+                    'format': dataset.get('format'),
+                    'total_rows': dataset.get('total_rows'),
+                    'total_size_bytes': dataset.get('total_size_bytes'),
+                    'description': dataset.get('description')
+                }
+        elif training.get('preprocessed_id'):
+            preprocessed = dataset_manager.repo.get_preprocessed(training['preprocessed_id'])
+            if preprocessed:
+                detail['data_source'] = {
+                    'type': 'preprocessed',
+                    'preprocessed_id': training['preprocessed_id'],
+                    'name': preprocessed['name'],
+                    'status': preprocessed['status'],
+                    'source_version_id': preprocessed.get('source_version_id'),
+                    'preprocessing_config': preprocessed.get('preprocessing_config'),
+                    'created_at': preprocessed.get('created_at').isoformat() if preprocessed.get('created_at') else None
+                }
+                # 补充原始数据集信息（谱系）
+                if preprocessed.get('dataset_id'):
+                    parent_dataset = dataset_manager.get_dataset_by_id(preprocessed['dataset_id'])
+                    if parent_dataset:
+                        detail['data_source']['parent_dataset'] = {
+                            'dataset_id': preprocessed['dataset_id'],
+                            'dataset_name': parent_dataset['dataset_name']
+                        }
+
+        return jsonify({
+            'success': True,
+            'training': detail
+        })
+
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/trainings/<int:training_id>/start', methods=['POST'])
+def start_training_task(training_id):
+    """手动启动训练任务（将状态从 pending 改为 running）"""
+    try:
+        training_manager.start_training(training_id)
+
+        return jsonify({
+            'success': True,
+            'message': '训练任务已启动'
+        })
+
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/trainings/<int:training_id>/complete', methods=['POST'])
+def complete_training_task(training_id):
+    """标记训练完成（供训练脚本回调使用）"""
+    try:
+        data = request.get_json() or {}
+
+        training_manager.complete_training(
+            training_id=training_id,
+            final_metrics=data.get('final_metrics', {}),
+            compute_time_seconds=data.get('compute_time_seconds', 0)
+        )
+
+        return jsonify({
+            'success': True,
+            'message': '训练任务已标记为完成'
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/trainings/<int:training_id>/fail', methods=['POST'])
+def fail_training_task(training_id):
+    """标记训练失败（供训练脚本回调使用）"""
+    try:
+        data = request.get_json() or {}
+
+        training_manager.fail_training(
+            training_id=training_id,
+            error_message=data.get('error_message', 'Unknown error'),
+            exit_code=data.get('exit_code', -1)
+        )
+
+        return jsonify({
+            'success': True,
+            'message': '训练任务已标记为失败'
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/trainings/<int:training_id>/checkpoint', methods=['POST'])
+def save_training_checkpoint(training_id):
+    """保存训练检查点（供训练脚本调用）"""
+    try:
+        # 检查是否有文件上传
+        if 'weight_file' not in request.files:
+            return jsonify({'success': False, 'error': '未提供权重文件'}), 400
+
+        file = request.files['weight_file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': '文件名为空'}), 400
+
+        # 保存到临时文件
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pt') as tmp:
+            file.save(tmp.name)
+            tmp_path = tmp.name
+
+        # 解析其他参数
+        epoch_number = request.form.get('epoch_number', type=int, default=0)
+        is_best = request.form.get('is_best', 'false').lower() == 'true'
+        metrics_snapshot = json.loads(request.form.get('metrics_snapshot', '{}'))
+
+        # 保存检查点
+        result = training_manager.save_checkpoint(
+            training_id=training_id,
+            weight_path=tmp_path,
+            epoch_number=epoch_number,
+            is_best=is_best,
+            metrics_snapshot=metrics_snapshot,
+            note=request.form.get('note', '')
+        )
+
+        # 清理临时文件
+        os.unlink(tmp_path)
+
+        return jsonify({
+            'success': True,
+            'checkpoint_id': result.get('checkpoint_id'),
+            'best_id': result.get('best_id'),
+            'message': '检查点保存成功'
+        })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/trainings/<int:training_id>/resume', methods=['GET'])
+def get_training_resume_info(training_id):
+    """获取训练恢复信息（断点续训）"""
+    try:
+        resume_info = training_manager.resume_from_checkpoint(training_id)
+
+        if not resume_info:
+            return jsonify({
+                'success': False,
+                'error': '该训练任务无法恢复（可能已完成或没有检查点）'
+            }), 400
+
+        return jsonify({
+            'success': True,
+            'resume_info': resume_info
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# 权重下载
+@app.route('/api/weights/<int:weight_id>/download', methods=['GET'])
+def download_weight(weight_id):
+    try:
+        # 获取权重信息
+        weight = training_manager.repo.get_weight_by_id(weight_id)
+        if not weight:
+            return jsonify({'success': False, 'error': '权重不存在'}), 404
+
+        # 下载到临时文件
+        import tempfile
+        temp_path = tempfile.mktemp(suffix=f".{weight['format']}")
+
+        training_manager.db_client.s3_client.download_file(
+            weight['bucket_name'],
+            weight['object_key'],
+            temp_path
+        )
+
+        # 生成文件名
+        training = training_manager.repo.get_training_by_id(weight['training_id'])
+        filename = f"training_{weight['training_id']}_{weight['weight_type']}_epoch{weight['epoch_number']}.{weight['format']}"
+
+        return send_file(
+            temp_path,
+            as_attachment=True,
+            download_name=filename,
+            mimetype=mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+        )
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/gpu', methods=['GET'])
 def get_gpu_status():
@@ -548,6 +912,30 @@ def get_gpu_status():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/power', methods=['GET'])
+def get_power_status():
+    try:
+        ac_connected = get_ac_status()
+
+        if ac_connected is None:
+            return jsonify({
+                'success': False,
+                'error': '无法获取电源状态或系统不支持'
+            }), 500
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'ac_connected': ac_connected
+            }
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

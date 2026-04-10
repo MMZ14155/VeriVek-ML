@@ -18,9 +18,15 @@ tailwind.config = {
     }
 };
 
-// GPU 监控状态跟踪
+// GPU 监控变量
 let gpuErrorCount = 0;
 const GPU_ERROR_THRESHOLD = 3;
+
+// 电源监控变量
+let lastPowerStatus = null;
+
+// 当前显示模式：'normal' | 'no_gpu' | 'no_power'
+let currentDisplayMode = 'normal';
 
 // GPU 信息更新函数（全局通用）
 function fetchGPUInfo() {
@@ -34,17 +40,15 @@ function fetchGPUInfo() {
                 // 更新侧边栏为错误状态
                 updateSidebarGPUError();
 
-                // 达到阈值后显示仪表板警告
                 if (gpuErrorCount >= GPU_ERROR_THRESHOLD) {
-                    showGPUErrorState();
+                    showNoGPUState();
                 }
                 return;
             }
 
-            // 成功获取数据，重置错误计数并恢复正常显示
             gpuErrorCount = 0;
-            hideGPUErrorState();
-            updateGPUDisplay(data);
+
+            checkAndUpdateDisplay(data);
         })
         .catch(err => {
             console.error('Fetch error:', err);
@@ -52,15 +56,36 @@ function fetchGPUInfo() {
             updateSidebarGPUError();
 
             if (gpuErrorCount >= GPU_ERROR_THRESHOLD) {
-                showGPUErrorState();
+                showNoGPUState();
             }
         });
 }
 
-// 显示 GPU 错误状态（替换正常显示为警告）
-function showGPUErrorState() {
-    // GPU 利用率卡片
+// 检查电源状态并更新显示
+async function checkAndUpdateDisplay(gpuData) {
+    const acConnected = await fetchPowerStatus();
+
+    if (acConnected === null) {
+        // 无法获取电源状态，默认显示正常（依赖 GPU 数据）
+        showNormalState(gpuData);
+        return;
+    }
+
+    lastPowerStatus = acConnected;
+
+    if (acConnected === false) {
+        showNoPowerState();
+    } else {
+        showNormalState(gpuData);
+    }
+}
+
+// 显示无显卡状态（最高优先级）
+function showNoGPUState() {
+    currentDisplayMode = 'no_gpu';
+
     const normalDisplay = document.getElementById('gpu-normal-display');
+    const powerWarning = document.getElementById('gpu-power-warning');
     const errorDisplay = document.getElementById('gpu-error-display');
     const progressContainer = document.getElementById('gpu-progress-container');
     const metricCard = document.getElementById('gpu-metric-card');
@@ -69,24 +94,23 @@ function showGPUErrorState() {
     const iconContainer = document.getElementById('gpu-icon-container');
 
     if (normalDisplay) normalDisplay.classList.add('hidden');
+    if (powerWarning) powerWarning.classList.add('hidden');
     if (errorDisplay) errorDisplay.classList.remove('hidden');
     if (progressContainer) progressContainer.classList.add('hidden');
 
-    // 切换图标
     if (iconNormal) iconNormal.classList.add('hidden');
     if (iconWarning) iconWarning.classList.remove('hidden');
     if (iconContainer) {
-        iconContainer.classList.remove('bg-orange-500/20');
+        iconContainer.classList.remove('bg-orange-500/20', 'bg-amber-500/20');
         iconContainer.classList.add('bg-amber-500/20');
     }
 
-    // 改变边框为警告色
     if (metricCard) {
-        metricCard.classList.remove('border-orange-500');
+        metricCard.classList.remove('border-orange-500', 'border-indigo-500');
         metricCard.classList.add('border-amber-500');
     }
 
-    // 显存卡片
+    // 显存卡片显示错误
     const vramNormal = document.getElementById('vram-normal-display');
     const vramError = document.getElementById('vram-error-display');
     const vramProgress = document.getElementById('vram-progress-container');
@@ -112,10 +136,47 @@ function showGPUErrorState() {
     }
 }
 
-// 隐藏 GPU 错误状态（恢复正常显示）
-function hideGPUErrorState() {
-    // GPU 利用率卡片恢复正常
+// 显示未插电状态
+function showNoPowerState() {
+    currentDisplayMode = 'no_power';
+
+    // GPU 利用率卡片 - 显示电源警告
     const normalDisplay = document.getElementById('gpu-normal-display');
+    const powerWarning = document.getElementById('gpu-power-warning');
+    const errorDisplay = document.getElementById('gpu-error-display');
+    const progressContainer = document.getElementById('gpu-progress-container');
+    const metricCard = document.getElementById('gpu-metric-card');
+    const iconNormal = document.getElementById('gpu-icon-normal');
+    const iconWarning = document.getElementById('gpu-icon-warning');
+    const iconContainer = document.getElementById('gpu-icon-container');
+
+    if (normalDisplay) normalDisplay.classList.add('hidden');
+    if (powerWarning) powerWarning.classList.remove('hidden');
+    if (errorDisplay) errorDisplay.classList.add('hidden');
+    if (progressContainer) progressContainer.classList.add('hidden');
+
+    // 切换为电源图标
+    if (iconNormal) iconNormal.classList.add('hidden');
+    if (iconWarning) iconWarning.classList.remove('hidden');
+    if (iconContainer) {
+        iconContainer.classList.remove('bg-orange-500/20', 'bg-amber-500/20');
+        iconContainer.classList.add('bg-amber-500/20');
+    }
+
+    if (metricCard) {
+        metricCard.classList.remove('border-orange-500', 'border-amber-500');
+        metricCard.classList.add('border-amber-500');
+    }
+
+    resetVRAMDisplay();
+}
+
+// 显示正常状态
+function showNormalState(data) {
+    currentDisplayMode = 'normal';
+
+    const normalDisplay = document.getElementById('gpu-normal-display');
+    const powerWarning = document.getElementById('gpu-power-warning');
     const errorDisplay = document.getElementById('gpu-error-display');
     const progressContainer = document.getElementById('gpu-progress-container');
     const metricCard = document.getElementById('gpu-metric-card');
@@ -124,22 +185,27 @@ function hideGPUErrorState() {
     const iconContainer = document.getElementById('gpu-icon-container');
 
     if (normalDisplay) normalDisplay.classList.remove('hidden');
+    if (powerWarning) powerWarning.classList.add('hidden');
     if (errorDisplay) errorDisplay.classList.add('hidden');
     if (progressContainer) progressContainer.classList.remove('hidden');
 
     if (iconNormal) iconNormal.classList.remove('hidden');
     if (iconWarning) iconWarning.classList.add('hidden');
     if (iconContainer) {
+        iconContainer.classList.remove('bg-amber-500/20', 'bg-red-500/20');
         iconContainer.classList.add('bg-orange-500/20');
-        iconContainer.classList.remove('bg-amber-500/20');
     }
 
     if (metricCard) {
+        metricCard.classList.remove('border-amber-500', 'border-red-500');
         metricCard.classList.add('border-orange-500');
-        metricCard.classList.remove('border-amber-500');
     }
 
-    // 显存卡片恢复正常
+    updateGPUDisplay(data);
+}
+
+// 重置显存显示为正常状态
+function resetVRAMDisplay() {
     const vramNormal = document.getElementById('vram-normal-display');
     const vramError = document.getElementById('vram-error-display');
     const vramProgress = document.getElementById('vram-progress-container');
@@ -155,13 +221,13 @@ function hideGPUErrorState() {
     if (vramIconNormal) vramIconNormal.classList.remove('hidden');
     if (vramIconWarning) vramIconWarning.classList.add('hidden');
     if (vramIconContainer) {
-        vramIconContainer.classList.add('bg-purple-500/20');
         vramIconContainer.classList.remove('bg-red-500/20');
+        vramIconContainer.classList.add('bg-purple-500/20');
     }
 
     if (vramCard) {
-        vramCard.classList.add('border-purple-500');
         vramCard.classList.remove('border-red-500');
+        vramCard.classList.add('border-purple-500');
     }
 }
 
@@ -226,7 +292,23 @@ function updateGPUDisplay(data) {
     }
 }
 
-// 通用工具函数（被多个页面使用）
+// 获取电源状态
+function fetchPowerStatus() {
+    return fetch('/api/power')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                return data.data.ac_connected;
+            }
+            return null;
+        })
+        .catch(err => {
+            console.error('Power status fetch error:', err);
+            return null;
+        });
+}
+
+// 通用工具函数
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');

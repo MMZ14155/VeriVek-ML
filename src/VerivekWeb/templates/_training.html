@@ -1,164 +1,577 @@
 {% extends "base.html" %}
 
-{% block title %}训练配置 - VeriVek{% endblock %}
+{% block title %}训练管理 - VeriVek{% endblock %}
 
 {% block nav_training_class %}tab-active{% endblock %}
 
+{% block extra_head %}
+<style>
+    .status-pending { @apply bg-amber-500/20 text-amber-400 border-amber-500/30; }
+    .status-running { @apply bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse; }
+    .status-completed { @apply bg-emerald-500/20 text-emerald-400 border-emerald-500/30; }
+    .status-failed { @apply bg-red-500/20 text-red-400 border-red-500/30; }
+    .status-cancelled { @apply bg-gray-500/20 text-gray-400 border-gray-500/30; }
+    .metric-highlight { @apply text-indigo-400 font-mono font-semibold; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="fade-in space-y-6">
-    <div class="flex justify-between items-center mb-8">
-        <div>
-            <h1 class="text-3xl font-bold mb-2">训练配置</h1>
-            <p class="text-gray-400">配置超参数并启动训练任务</p>
+<div class="fade-in h-full flex flex-col">
+    <!-- 顶部统计栏 -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="glass-panel rounded-2xl p-5 border border-white/5">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-gray-400 text-sm">总训练数</span>
+                <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                </div>
+            </div>
+            <div class="text-2xl font-bold" id="stat-total">0</div>
+            <div class="text-xs text-gray-500 mt-1">历史累计</div>
+        </div>
+
+        <div class="glass-panel rounded-2xl p-5 border border-white/5">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-gray-400 text-sm">进行中</span>
+                <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+            </div>
+            <div class="text-2xl font-bold text-blue-400" id="stat-running">0</div>
+            <div class="text-xs text-gray-500 mt-1">活跃任务</div>
+        </div>
+
+        <div class="glass-panel rounded-2xl p-5 border border-white/5">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-gray-400 text-sm">已完成</span>
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+            </div>
+            <div class="text-2xl font-bold text-emerald-400" id="stat-completed">0</div>
+            <div class="text-xs text-gray-500 mt-1">成功收敛</div>
+        </div>
+
+        <div class="glass-panel rounded-2xl p-5 border border-white/5">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-gray-400 text-sm">失败/取消</span>
+                <div class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+            </div>
+            <div class="text-2xl font-bold text-red-400" id="stat-failed">0</div>
+            <div class="text-xs text-gray-500 mt-1">需关注</div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- 左侧：选择与配置 -->
-        <div class="lg:col-span-2 space-y-6">
-            <!-- 数据集选择 -->
-            <div class="glass-panel rounded-2xl p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center">
-                    <span class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm mr-2">1</span>
-                    选择数据集
-                </h3>
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="p-4 rounded-xl border-2 border-indigo-500 bg-indigo-500/10 cursor-pointer transition-all">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="font-medium">CIFAR-10</span>
-                            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                        </div>
-                        <p class="text-xs text-gray-400">60,000 样本 • 图像分类</p>
+    <!-- 主内容区：左右分栏 -->
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
+        <!-- 左侧：训练历史列表 -->
+        <div class="lg:col-span-2 glass-panel rounded-2xl border border-white/5 flex flex-col overflow-hidden">
+            <!-- 操作栏 -->
+            <div class="p-5 border-b border-white/5 flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+                <div class="flex items-center space-x-2">
+                    <h2 class="text-lg font-semibold">训练历史</h2>
+                    <span class="text-xs text-gray-500 bg-white/5 px-2 py-1 rounded-full" id="list-count">加载中...</span>
+                </div>
+
+                <div class="flex items-center space-x-3 w-full sm:w-auto">
+                    <div class="relative flex-1 sm:flex-none">
+                        <input type="text" id="search-input" placeholder="搜索训练名称..."
+                               class="w-full sm:w-64 bg-white/5 border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+                        <svg class="w-4 h-4 text-gray-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </div>
-                    <div class="p-4 rounded-xl border border-white/10 hover:border-white/30 cursor-pointer transition-all">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="font-medium">IMDB Reviews</span>
-                        </div>
-                        <p class="text-xs text-gray-400">50,000 样本 • 情感分析</p>
-                    </div>
+
+                    <select id="status-filter" class="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 cursor-pointer">
+                        <option value="">全部状态</option>
+                        <option value="pending">待启动</option>
+                        <option value="running">进行中</option>
+                        <option value="completed">已完成</option>
+                        <option value="failed">失败</option>
+                        <option value="cancelled">已取消</option>
+                    </select>
                 </div>
             </div>
 
-            <!-- 模型选择 -->
-            <div class="glass-panel rounded-2xl p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center">
-                    <span class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm mr-2">2</span>
-                    选择模型
-                </h3>
-                <div class="grid grid-cols-3 gap-4">
-                    <div class="p-4 rounded-xl border border-white/10 hover:border-indigo-500/50 cursor-pointer transition-all">
-                        <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mb-2">
-                            <span class="text-xs font-bold text-indigo-400">R18</span>
-                        </div>
-                        <div class="text-sm font-medium">ResNet-18</div>
-                        <div class="text-xs text-gray-400 mt-1">轻量级</div>
-                    </div>
-                    <div class="p-4 rounded-xl border-2 border-indigo-500 bg-indigo-500/10 cursor-pointer transition-all relative">
-                        <div class="absolute top-2 right-2">
-                            <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                        </div>
-                        <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mb-2">
-                            <span class="text-xs font-bold text-indigo-400">R50</span>
-                        </div>
-                        <div class="text-sm font-medium">ResNet-50</div>
-                        <div class="text-xs text-gray-400 mt-1">平衡型</div>
-                    </div>
-                    <div class="p-4 rounded-xl border border-white/10 hover:border-indigo-500/50 cursor-pointer transition-all">
-                        <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mb-2">
-                            <span class="text-xs font-bold text-indigo-400">R101</span>
-                        </div>
-                        <div class="text-sm font-medium">ResNet-101</div>
-                        <div class="text-xs text-gray-400 mt-1">高精度</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 超参数配置 -->
-            <div class="glass-panel rounded-2xl p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center">
-                    <span class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm mr-2">3</span>
-                    超参数配置
-                </h3>
-                <div class="grid grid-cols-2 gap-6">
-                    <div>
-                        <label class="block text-sm text-gray-400 mb-2">学习率 (Learning Rate)</label>
-                        <input type="number" value="0.001" step="0.0001" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 font-mono">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-gray-400 mb-2">批次大小 (Batch Size)</label>
-                        <select class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
-                            <option>32</option>
-                            <option selected>64</option>
-                            <option>128</option>
-                            <option>256</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm text-gray-400 mb-2">训练轮数 (Epochs)</label>
-                        <input type="number" value="50" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 font-mono">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-gray-400 mb-2">优化器</label>
-                        <select class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
-                            <option selected>Adam</option>
-                            <option>SGD</option>
-                            <option>AdamW</option>
-                            <option>RMSprop</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm text-gray-400 mb-2">权重衰减 (Weight Decay)</label>
-                        <input type="number" value="0.0001" step="0.0001" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 font-mono">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-gray-400 mb-2">学习率调度</label>
-                        <select class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
-                            <option>固定</option>
-                            <option selected>余弦退火</option>
-                            <option>步进衰减</option>
-                            <option>指数衰减</option>
-                        </select>
-                    </div>
+            <!-- 列表内容 -->
+            <div class="flex-1 overflow-y-auto p-2 space-y-2" id="training-list">
+                <!-- 动态加载内容 -->
+                <div class="flex items-center justify-center h-32 text-gray-500">
+                    <svg class="animate-spin w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    加载训练记录...
                 </div>
             </div>
         </div>
 
-        <!-- 右侧：摘要与启动 -->
-        <div class="space-y-6">
-            <div class="glass-panel rounded-2xl p-6 sticky top-6">
-                <h3 class="text-lg font-semibold mb-6">训练摘要</h3>
-
-                <div class="space-y-4 mb-6">
-                    <div class="flex justify-between items-center py-3 border-b border-white/5">
-                        <span class="text-gray-400">数据集</span>
-                        <span class="font-medium">CIFAR-10</span>
+        <!-- 右侧：快速启动新训练 -->
+        <div class="lg:col-span-1 space-y-4 overflow-y-auto">
+            <div class="glass-panel rounded-2xl p-6 border border-white/5">
+                <div class="flex items-center space-x-2 mb-6">
+                    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
                     </div>
-                    <div class="flex justify-between items-center py-3 border-b border-white/5">
-                        <span class="text-gray-400">模型</span>
-                        <span class="font-medium">ResNet-50</span>
-                    </div>
-                    <div class="flex justify-between items-center py-3 border-b border-white/5">
-                        <span class="text-gray-400">预计时间</span>
-                        <span class="font-medium">~2小时</span>
-                    </div>
-                    <div class="flex justify-between items-center py-3 border-b border-white/5">
-                        <span class="text-gray-400">显存需求</span>
-                        <span class="font-medium text-emerald-400">~4GB</span>
-                    </div>
+                    <h2 class="text-lg font-semibold">启动新训练</h2>
                 </div>
 
-                <button onclick="startTraining()" class="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl font-semibold text-lg transition-all neon-glow flex items-center justify-center space-x-2">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <span>开始训练</span>
-                </button>
+                <form id="new-training-form" class="space-y-4">
+                    <!-- 训练名称 -->
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wider">训练名称</label>
+                        <input type="text" name="training_name" required placeholder="例如：ResNet50-CIFAR10-实验1"
+                               class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+                    </div>
 
-                <p class="text-xs text-gray-500 text-center mt-4">训练将在后台运行，可随时查看进度</p>
+                    <!-- 数据集选择 -->
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wider">数据集</label>
+                        <select name="dataset_id" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer">
+                            <option value="">选择数据集...</option>
+                            <!-- 动态填充 -->
+                        </select>
+                    </div>
+
+                    <!-- 模型选择 -->
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wider">基础模型</label>
+                        <select name="model_commit_id" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer">
+                            <option value="">选择模型版本...</option>
+                            <!-- 动态填充 -->
+                        </select>
+                    </div>
+
+                    <!-- 超参数：双列布局 -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1.5">Epochs</label>
+                            <input type="number" name="epochs" value="50" min="1"
+                                   class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1.5">Batch Size</label>
+                            <select name="batch_size" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 font-mono">
+                                <option>16</option>
+                                <option selected>32</option>
+                                <option>64</option>
+                                <option>128</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1.5">学习率</label>
+                            <input type="number" name="lr" value="0.001" step="0.0001"
+                                   class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1.5">优化器</label>
+                            <select name="optimizer" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500">
+                                <option selected>Adam</option>
+                                <option>SGD</option>
+                                <option>AdamW</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- 启动按钮 -->
+                    <button type="submit" id="start-btn" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl font-semibold text-sm transition-all neon-glow flex items-center justify-center space-x-2 mt-6">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>创建并启动</span>
+                    </button>
+                </form>
             </div>
+
+            <!-- 快速提示 -->
+            <div class="glass-panel rounded-2xl p-4 border border-white/5 bg-indigo-500/5">
+                <div class="flex items-start space-x-3">
+                    <svg class="w-5 h-5 text-indigo-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <div class="text-sm text-gray-300 space-y-1">
+                        <p class="font-medium text-white">训练流程说明</p>
+                        <p class="text-xs text-gray-400">1. 配置完成后点击启动</p>
+                        <p class="text-xs text-gray-400">2. 任务进入队列等待资源</p>
+                        <p class="text-xs text-gray-400">3. 实时监控请查看仪表板</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 训练详情模态框 -->
+<div id="detail-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal()"></div>
+    <div class="absolute inset-4 md:inset-10 lg:inset-20 glass-panel rounded-2xl border border-white/10 flex flex-col overflow-hidden fade-in">
+        <!-- 模态框头部 -->
+        <div class="flex items-center justify-between p-6 border-b border-white/5">
+            <div>
+                <h3 class="text-xl font-bold" id="modal-title">训练详情</h3>
+                <p class="text-sm text-gray-400 mt-1" id="modal-subtitle">ID: --</p>
+            </div>
+            <button onclick="closeModal()" class="p-2 hover:bg-white/5 rounded-lg transition-colors">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <!-- 模态框内容 -->
+        <div class="flex-1 overflow-y-auto p-6" id="modal-content">
+            <!-- 动态内容 -->
         </div>
     </div>
 </div>
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='js/_training.js') if url_for else 'static/js/_training.js' }}"></script>
+<script>
+// 状态映射配置
+const STATUS_CONFIG = {
+    pending: { label: '待启动', class: 'status-pending', icon: '⏳' },
+    running: { label: '训练中', class: 'status-running', icon: '⚡' },
+    completed: { label: '已完成', class: 'status-completed', icon: '✓' },
+    failed: { label: '失败', class: 'status-failed', icon: '✕' },
+    cancelled: { label: '已取消', class: 'status-cancelled', icon: '⊘' }
+};
+
+// 加载训练列表
+async function loadTrainings() {
+    try {
+        const response = await fetch('/api/trainings');
+        const data = await response.json();
+
+        if (data.error) {
+            console.error('Failed to load trainings:', data.error);
+            return;
+        }
+
+        renderTrainingList(data.trainings || []);
+        updateStats(data.trainings || []);
+    } catch (err) {
+        console.error('Error:', err);
+        document.getElementById('training-list').innerHTML = `
+            <div class="flex flex-col items-center justify-center h-32 text-gray-500">
+                <svg class="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span class="text-sm">加载失败，请刷新重试</span>
+            </div>
+        `;
+    }
+}
+
+// 渲染训练列表
+function renderTrainingList(trainings) {
+    const container = document.getElementById('training-list');
+    const filter = document.getElementById('status-filter').value;
+    const search = document.getElementById('search-input').value.toLowerCase();
+
+    // 筛选
+    let filtered = trainings.filter(t => {
+        if (filter && t.status !== filter) return false;
+        if (search && !t.training_name?.toLowerCase().includes(search)) return false;
+        return true;
+    });
+
+    document.getElementById('list-count').textContent = `${filtered.length} 个任务`;
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-32 text-gray-500">
+                <svg class="w-8 h-8 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                <span class="text-sm">暂无符合条件的训练任务</span>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filtered.map(t => {
+        const status = STATUS_CONFIG[t.status] || STATUS_CONFIG.pending;
+        const duration = formatDuration(t.compute_time_seconds);
+        const bestMetric = t.final_metrics?.accuracy || t.final_metrics?.loss || '--';
+
+        return `
+            <div class="group bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl p-4 transition-all cursor-pointer" onclick="showDetail(${t.training_id})">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center space-x-3">
+                        <span class="px-2.5 py-1 rounded-full text-xs font-medium border ${status.class}">
+                            ${status.icon} ${status.label}
+                        </span>
+                        <span class="font-medium text-white group-hover:text-indigo-300 transition-colors">${escapeHtml(t.training_name || '未命名训练')}</span>
+                    </div>
+                    <span class="text-xs text-gray-500 font-mono">#${t.training_id}</span>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                    <div>
+                        <div class="text-xs text-gray-500 mb-0.5">模型</div>
+                        <div class="text-gray-300 truncate">${escapeHtml(t.model_name || 'Unknown')}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-500 mb-0.5">数据集</div>
+                        <div class="text-gray-300 truncate">${escapeHtml(t.dataset_name || 'Unknown')}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-500 mb-0.5">耗时</div>
+                        <div class="font-mono text-gray-300">${duration}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-500 mb-0.5">最佳指标</div>
+                        <div class="metric-highlight">${typeof bestMetric === 'number' ? bestMetric.toFixed(4) : bestMetric}</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between pt-3 border-t border-white/5">
+                    <div class="flex items-center space-x-2 text-xs text-gray-500">
+                        <span>${formatTime(t.created_at)}</span>
+                        <span>•</span>
+                        <span>${t.created_by || 'anonymous'}</span>
+                    </div>
+                    <div class="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        ${t.status === 'completed' ? `
+                            <button onclick="event.stopPropagation(); downloadWeight(${t.main_weight_id})" class="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-400 rounded-lg text-xs transition-colors">
+                                下载权重
+                            </button>
+                        ` : ''}
+                        <button onclick="event.stopPropagation(); deleteTraining(${t.training_id})" class="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-xs transition-colors">
+                            删除
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// 更新统计数据
+function updateStats(trainings) {
+    const stats = {
+        total: trainings.length,
+        running: trainings.filter(t => t.status === 'running').length,
+        completed: trainings.filter(t => t.status === 'completed').length,
+        failed: trainings.filter(t => ['failed', 'cancelled'].includes(t.status)).length
+    };
+
+    Object.keys(stats).forEach(key => {
+        const el = document.getElementById(`stat-${key}`);
+        if (el) el.textContent = stats[key];
+    });
+}
+
+// 显示详情
+async function showDetail(trainingId) {
+    try {
+        const response = await fetch(`/api/trainings/${trainingId}`);
+        const data = await response.json();
+
+        if (data.error) {
+            alert('加载详情失败：' + data.error);
+            return;
+        }
+
+        const t = data.training;
+        const status = STATUS_CONFIG[t.status] || STATUS_CONFIG.pending;
+
+        document.getElementById('modal-title').textContent = t.training_name || '未命名训练';
+        document.getElementById('modal-subtitle').textContent = `ID: ${t.training_id} • 创建于 ${formatTime(t.created_at)}`;
+
+        document.getElementById('modal-content').innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- 状态卡片 -->
+                <div class="glass-panel rounded-xl p-5 border border-white/5">
+                    <h4 class="text-sm font-medium text-gray-400 mb-4">执行状态</h4>
+                    <div class="flex items-center space-x-3 mb-4">
+                        <span class="px-3 py-1.5 rounded-lg text-sm font-medium border ${status.class}">
+                            ${status.icon} ${status.label}
+                        </span>
+                        ${t.status === 'running' ? '<span class="text-xs text-blue-400 animate-pulse">● 实时监控请查看仪表板</span>' : ''}
+                    </div>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between"><span class="text-gray-500">启动时间</span><span>${t.started_at ? formatTime(t.started_at) : '--'}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-500">完成时间</span><span>${t.completed_at ? formatTime(t.completed_at) : '--'}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-500">总耗时</span><span class="font-mono">${formatDuration(t.compute_time_seconds)}</span></div>
+                        ${t.error_message ? `<div class="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs">${escapeHtml(t.error_message)}</div>` : ''}
+                    </div>
+                </div>
+
+                <!-- 超参数 -->
+                <div class="glass-panel rounded-xl p-5 border border-white/5">
+                    <h4 class="text-sm font-medium text-gray-400 mb-4">超参数配置</h4>
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        ${Object.entries(t.hyperparameters || {}).map(([k, v]) => `
+                            <div class="bg-white/5 rounded-lg p-2.5">
+                                <div class="text-xs text-gray-500 mb-0.5">${escapeHtml(k)}</div>
+                                <div class="font-mono text-indigo-300">${typeof v === 'number' ? v.toFixed(6) : escapeHtml(String(v))}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- 最终指标 -->
+                ${t.final_metrics && Object.keys(t.final_metrics).length > 0 ? `
+                    <div class="glass-panel rounded-xl p-5 border border-white/5 md:col-span-2">
+                        <h4 class="text-sm font-medium text-gray-400 mb-4">训练结果</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            ${Object.entries(t.final_metrics).map(([k, v]) => `
+                                <div class="text-center p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
+                                    <div class="text-2xl font-bold text-emerald-400 font-mono mb-1">${typeof v === 'number' ? v.toFixed(4) : v}</div>
+                                    <div class="text-xs text-gray-500 uppercase">${escapeHtml(k)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
+                <!-- 权重信息 -->
+                ${t.weights && t.weights.length > 0 ? `
+                    <div class="glass-panel rounded-xl p-5 border border-white/5 md:col-span-2">
+                        <h4 class="text-sm font-medium text-gray-400 mb-4">生成权重</h4>
+                        <div class="space-y-2">
+                            ${t.weights.map(w => `
+                                <div class="flex items-center justify-between bg-white/5 rounded-lg p-3 border border-white/5">
+                                    <div class="flex items-center space-x-3">
+                                        <span class="px-2 py-0.5 rounded text-xs ${w.weight_type === 'best' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-400'}">${w.weight_type.toUpperCase()}</span>
+                                        <span class="text-sm font-mono text-gray-300">Epoch ${w.epoch_number}</span>
+                                        <span class="text-xs text-gray-500">${formatBytes(w.size_bytes)}</span>
+                                    </div>
+                                    <button onclick="downloadWeight(${w.weight_id})" class="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-400 rounded-lg text-xs transition-colors">
+                                        下载
+                                    </button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+
+        document.getElementById('detail-modal').classList.remove('hidden');
+    } catch (err) {
+        console.error('Error loading detail:', err);
+        alert('加载详情失败');
+    }
+}
+
+function closeModal() {
+    document.getElementById('detail-modal').classList.add('hidden');
+}
+
+// 启动新训练
+document.getElementById('new-training-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('start-btn');
+    const originalContent = btn.innerHTML;
+
+    btn.innerHTML = '<svg class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>创建中...</span>';
+    btn.disabled = true;
+
+    const formData = new FormData(e.target);
+    const payload = {
+        training_name: formData.get('training_name'),
+        model_commit_id: parseInt(formData.get('model_commit_id')),
+        dataset_id: parseInt(formData.get('dataset_id')),
+        hyperparameters: {
+            epochs: parseInt(formData.get('epochs')),
+            batch_size: parseInt(formData.get('batch_size')),
+            lr: parseFloat(formData.get('lr')),
+            optimizer: formData.get('optimizer')
+        }
+        // gpu_count 已移除
+    };
+
+    try {
+        const response = await fetch('/api/trainings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            alert('创建失败：' + data.error);
+            btn.innerHTML = originalContent;
+            btn.disabled = false;
+            return;
+        }
+
+        btn.innerHTML = '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span>创建成功</span>';
+        btn.classList.remove('from-indigo-600', 'to-purple-600');
+        btn.classList.add('from-emerald-600', 'to-emerald-500');
+
+        // 刷新列表
+        setTimeout(() => {
+            loadTrainings();
+            // 重置表单
+            e.target.reset();
+            btn.innerHTML = originalContent;
+            btn.disabled = false;
+            btn.classList.add('from-indigo-600', 'to-purple-600');
+            btn.classList.remove('from-emerald-600', 'to-emerald-500');
+        }, 1000);
+
+    } catch (err) {
+        console.error('Error:', err);
+        alert('创建失败，请检查网络连接');
+        btn.innerHTML = originalContent;
+        btn.disabled = false;
+    }
+});
+
+async function deleteTraining(id) {
+    if (!confirm('确定要删除这个训练任务吗？相关的权重文件也会被删除。')) return;
+
+    try {
+        const response = await fetch(`/api/trainings/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            loadTrainings();
+        } else {
+            alert('删除失败');
+        }
+    } catch (err) {
+        alert('删除失败：' + err);
+    }
+}
+
+function downloadWeight(weightId) {
+    window.open(`/api/weights/${weightId}/download`, '_blank');
+}
+
+// 工具函数
+function formatDuration(seconds) {
+    if (!seconds) return '--';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+}
+
+function formatTime(isoString) {
+    if (!isoString) return '--';
+    const date = new Date(isoString);
+    return date.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatBytes(bytes) {
+    if (!bytes) return '--';
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 事件监听
+document.getElementById('status-filter').addEventListener('change', loadTrainings);
+document.getElementById('search-input').addEventListener('input', loadTrainings);
+
+// 初始化
+document.addEventListener('DOMContentLoaded', () => {
+    loadTrainings();
+    // 每30秒刷新一次
+    setInterval(loadTrainings, 30000);
+});
+</script>
 {% endblock %}
