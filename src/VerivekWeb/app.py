@@ -2,7 +2,8 @@ import os
 import sys
 import json
 import mimetypes
-from flask import Flask, jsonify, request, render_template, redirect, url_for, send_file
+from flask import Flask, jsonify, request, render_template, redirect, url_for, send_file, session
+from functools import wraps
 from werkzeug.utils import secure_filename
 import tempfile
 
@@ -10,10 +11,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from VerivekCore.Database.db_client import DbClient
 from VerivekCore.DatasetManager.dataset_manager import DatasetManager
 from VerivekCore.ModelManager.model_manager import ModelManager
+from VerivekCore.ModelManager.architecture_generator import ArchitectureGenerator
 from VerivekCore.Training.training_manager import TrainingManager
 from VerivekCore.Training.gpu_monitor import get_gpu_info, get_total_usage, get_ac_status
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'verivek-dev')
 
 db_client = DbClient()
 dataset_manager = DatasetManager(db_client)
@@ -25,34 +28,199 @@ ALLOWED_EXTENSIONS = {'py'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            if request.is_json or request.path.startswith('/api/'):
+                return jsonify({'success': False, 'error': '未登录或登录已过期'}), 401
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def auth_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'success': False, 'error': '未登录或登录已过期'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route('/')
 def index():
-    """根路径重定向到仪表板"""
-    return redirect(url_for('dashboard'))
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
+
+@app.route('/login')
+def login():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return render_template('login.html')
 
 @app.route('/dashboard')
+@login_required
 def dashboard():
-    """仪表板页面 - 训练概览"""
     return render_template('_dashboard.html')
 
 @app.route('/datasets')
+@login_required
 def datasets():
-    """数据集管理页面"""
     return render_template('_datasets.html')
 
 @app.route('/models')
+@login_required
 def models():
-    """模型仓库页面"""
     return render_template('_models.html')
 
 @app.route('/training')
+@login_required
 def training():
-    """训练配置页面"""
     return render_template('_training.html')
 
 @app.route('/model-builder')
+@login_required
 def model_builder():
     return render_template('_model_builder.html')
+
+def execute_query(conn, query, params=None):
+    import psycopg2.extras
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
+
+        # 如果是 SELECT 语句，获取结果
+        if query.strip().upper().startswith('SELECT'):
+            result = cursor.fetchall()
+            return result
+        else:
+            conn.commit()
+            return cursor.rowcount
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cursor.close()
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    """用户登录接口"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '请求体不能为空'}), 400
+
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+        remember_me = data.get('remember_me', False)
+
+        if not username or not password:
+            return jsonify({'success': False, 'error': '用户名和密码不能为空'}), 400
+
+        # 查询用户
+        query = """
+                SELECT user_id, username, password, role, preferences
+                FROM users
+                WHERE username = %s \
+                """
+        result = execute_query(db_client.db_conn, query, (username,))
+
+        if not result or len(result) == 0:
+            return jsonify({'success': False, 'error': '用户名或密码错误'}), 401
+
+        user = dict(result[0])
+
+        # 验证密码
+        if password != user['password']:
+            return jsonify({'success': False, 'error': '用户名或密码错误'}), 401
+
+        # 设置 session
+        session['user_id'] = user['user_id']
+        session['username'] = user['username']
+        session['role'] = user['role']
+        session.permanent = remember_me
+
+        # 更新最后登录时间
+        update_query = """
+                       UPDATE users
+                       SET last_login_at = CURRENT_TIMESTAMP
+                       WHERE user_id = %s \
+                       """
+        execute_query(db_client.db_conn, update_query, (user['user_id'],))
+
+        return jsonify({
+            'success': True,
+            'user': {
+                'user_id': user['user_id'],
+                'username': user['username'],
+                'role': user['role'],
+                'preferences': user['preferences'] or {}
+            },
+            'message': '登录成功'
+        })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': f'登录失败: {str(e)}'}), 500
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_logout():
+    try:
+        session.clear()
+        return jsonify({'success': True, 'message': '登出成功'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/auth/check', methods=['GET'])
+def api_auth_check():
+    if 'user_id' in session:
+        return jsonify({
+            'success': True,
+            'authenticated': True,
+            'user': {
+                'user_id': session.get('user_id'),
+                'username': session.get('username'),
+                'role': session.get('role')
+            }
+        })
+    return jsonify({
+        'success': True,
+        'authenticated': False,
+        'user': None
+    })
+
+@app.route('/api/users/count', methods=['GET'])
+def api_users_count():
+    try:
+        query = "SELECT COUNT(*) as count FROM users"
+        result = execute_query(db_client.db_conn, query)
+        count = result[0]['count'] if result else 0
+        return jsonify({'success': True, 'count': count})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/users/profile', methods=['GET'])
+@auth_required
+def api_user_profile():
+    """获取当前登录用户详细信息"""
+    try:
+        user_id = session.get('user_id')
+        query = """
+                SELECT user_id, username, role, last_login_at, created_at, preferences
+                FROM users
+                WHERE user_id = %s \
+                """
+        result = execute_query(db_client.db_conn, query, (user_id,))
+        if result:
+            return jsonify({'success': True, 'user': dict(result[0])})
+        return jsonify({'success': False, 'error': '用户不存在'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/datasets', methods=['GET'])
 def get_datasets():
@@ -521,6 +689,29 @@ def get_model_history(model_id):
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/architecture/generate', methods=['POST'])
+def generate_architecture():
+    try:
+        data = request.get_json()
+        graph = data.get('graph_structure', {})
+
+        # 使用生成器
+        generator = ArchitectureGenerator(graph)
+        code = generator.generate_code(data.get('class_name', 'GeneratedModel'))
+        stats = generator.analyze()
+
+        return jsonify({
+            'success': True,
+            'code': code,
+            'stats': stats
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
 
 @app.route('/api/trainings', methods=['POST'])
 def create_training():

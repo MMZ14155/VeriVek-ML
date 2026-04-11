@@ -24,7 +24,8 @@ class DatasetRepository:
                           head_version_id,
                           total_rows,
                           total_size_bytes,
-                          created_at
+                          created_at,
+                          visibility
                    FROM datasets
                    WHERE dataset_name = %s""",
                 (dataset_name,)
@@ -32,10 +33,16 @@ class DatasetRepository:
             row = cur.fetchone()
             if row:
                 return {
-                    "dataset_id": row[0], "dataset_name": row[1],
-                    "description": row[2], "format": row[3], "tags": row[4],
-                    "head_version_id": row[5], "total_rows": row[6],
-                    "total_size_bytes": row[7], "created_at": row[8]
+                    "dataset_id": row[0],
+                    "dataset_name": row[1],
+                    "description": row[2],
+                    "format": row[3],
+                    "tags": row[4],
+                    "head_version_id": row[5],
+                    "total_rows": row[6],
+                    "total_size_bytes": row[7],
+                    "created_at": row[8],
+                    "visibility": row[9]
                 }
             return None
 
@@ -110,15 +117,16 @@ class DatasetRepository:
             dataset_name: str,
             description: str = "",
             format: str = "",
-            tags: str = ""
+            tags: str = "",
+            visibility: str = "private"
     ) -> int:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO datasets (dataset_name, description, format, tags,
-                                         total_rows, total_size_bytes)
-                   VALUES (%s, %s, %s, %s, 0, 0)
+                                         total_rows, total_size_bytes, visibility)
+                   VALUES (%s, %s, %s, %s, 0, 0, %s)
                    RETURNING dataset_id""",
-                (dataset_name, description, format, tags)
+                (dataset_name, description, format, tags, visibility)
             )
             dataset_id = cur.fetchone()[0]
             self.db.db_conn.commit()
@@ -139,6 +147,19 @@ class DatasetRepository:
             cur.execute("DELETE FROM datasets WHERE dataset_id = %s", (dataset_id,))
             self.db.db_conn.commit()
             return [{"version_id": v[0], "object_key": v[1]} for v in versions]
+
+    def update_visibility(
+            self,
+            dataset_id: int,
+            visibility: str
+    ) -> bool:
+        with self.db.db_conn.cursor() as cur:
+            cur.execute(
+                "UPDATE datasets SET visibility = %s, updated_at = CURRENT_TIMESTAMP WHERE dataset_id = %s",
+                (visibility, dataset_id)
+            )
+            self.db.db_conn.commit()
+            return cur.rowcount > 0
 
     def update_dataset_stats(
             self,

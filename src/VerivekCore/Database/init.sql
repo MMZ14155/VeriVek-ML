@@ -1,9 +1,38 @@
+CREATE TABLE IF NOT EXISTS users (
+    user_id SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(255),
+
+    -- 用户角色
+    role VARCHAR(20) NOT NULL DEFAULT 'researcher'
+        CHECK (role IN ('admin', 'researcher', 'guest')),
+
+    -- 用户状态
+    last_login_at TIMESTAMP,
+
+    -- 用户配置
+    preferences JSONB DEFAULT '{}',
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT guest_no_password CHECK (
+        (role = 'guest' AND password IS NULL) OR
+        (role != 'guest')
+    )
+);
+
+INSERT INTO users (username, password, role) VALUES
+('admin', 'verivek-admin', 'admin');
+
 CREATE TABLE IF NOT EXISTS datasets (
     dataset_id SERIAL PRIMARY KEY,
     dataset_name VARCHAR(100) NOT NULL,
     description TEXT,
     format VARCHAR(20), -- csv, json等
     tags TEXT, -- CV, NLP等
+
+    visibility VARCHAR(10) DEFAULT 'private' CHECK (visibility IN ('public', 'private')),
 
     head_version_id INTEGER, -- 最新提交的ID
 
@@ -74,6 +103,8 @@ CREATE TABLE IF NOT EXISTS models (
     description TEXT,
     tags TEXT, -- CV, NLP等
 
+    visibility VARCHAR(10) DEFAULT 'private' CHECK (visibility IN ('public', 'private')),
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -136,6 +167,8 @@ CREATE TABLE IF NOT EXISTS trainings (
     -- 是否为断点由该字段控制：status != 'completed' 时，last 权重即为断点
     status VARCHAR(20) DEFAULT 'pending'
         CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+
+    visibility VARCHAR(10) DEFAULT 'private' CHECK (visibility IN ('public', 'private')),
 
     -- 训练指标
     metrics JSONB DEFAULT '{}',
@@ -208,3 +241,44 @@ ALTER TABLE trainings
     FOREIGN KEY (main_weight_id) REFERENCES training_weights(weight_id) ON DELETE SET NULL,
     ADD CONSTRAINT fk_training_checkpoint_weight
     FOREIGN KEY (checkpoint_weight_id) REFERENCES training_weights(weight_id) ON DELETE SET NULL;
+
+-- 取每个数据集的第一个版本的提交者作为创建者
+CREATE OR REPLACE VIEW datasets_with_creator AS
+SELECT
+    d.*,
+    dv.created_by AS creator,
+    dv.created_at AS first_version_time
+FROM datasets d
+LEFT JOIN (
+    SELECT DISTINCT ON (dataset_id)
+        dataset_id,
+        created_by,
+        created_at
+    FROM dataset_versions
+    ORDER BY dataset_id, version_id ASC
+) dv ON d.dataset_id = dv.dataset_id;
+
+-- 取每个模型的根提交的 author 作为创建者
+CREATE OR REPLACE VIEW models_with_creator AS
+SELECT
+    m.*,
+    mc.author AS creator,
+    mc.created_at AS first_commit_time
+FROM models m
+LEFT JOIN LATERAL (
+    SELECT author, created_at
+    FROM model_commits mc
+    WHERE mc.model_id = m.model_id
+      AND NOT EXISTS (
+          -- 没有作为 commit_id 出现在 commit_parents 中，即为根提交
+          SELECT 1 FROM commit_parents cp WHERE cp.commit_id = mc.commit_id
+      )
+    ORDER BY mc.commit_id ASC
+    LIMIT 1
+) mc ON true;
+
+CREATE OR REPLACE VIEW trainings_with_creator AS
+SELECT
+    t.*,
+    created_by AS creator
+FROM trainings t;
