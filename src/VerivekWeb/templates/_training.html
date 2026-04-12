@@ -124,8 +124,17 @@
                     <!-- 数据集选择 -->
                     <div>
                         <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wider">数据集</label>
-                        <select name="dataset_id" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer">
+                        <select name="dataset_id" id="dataset-select" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer">
                             <option value="">选择数据集...</option>
+                            <!-- 动态填充 -->
+                        </select>
+                    </div>
+
+                    <!-- 数据集版本选择 -->
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wider">数据集版本</label>
+                        <select name="version_id" id="dataset-version-select" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer" disabled>
+                            <option value="">先选择数据集...</option>
                             <!-- 动态填充 -->
                         </select>
                     </div>
@@ -133,8 +142,26 @@
                     <!-- 模型选择 -->
                     <div>
                         <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wider">基础模型</label>
-                        <select name="model_commit_id" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer">
-                            <option value="">选择模型版本...</option>
+                        <select name="model_id" id="model-select" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer">
+                            <option value="">选择模型...</option>
+                            <!-- 动态填充 -->
+                        </select>
+                    </div>
+
+                    <!-- 模型分支选择 -->
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wider">模型分支</label>
+                        <select name="branch_name" id="model-branch-select" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer" disabled>
+                            <option value="">先选择模型...</option>
+                            <!-- 动态填充 -->
+                        </select>
+                    </div>
+
+                    <!-- 模型 Commit 选择 -->
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wider">模型版本 (Commit)</label>
+                        <select name="model_commit_id" id="model-commit-select" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer" disabled>
+                            <option value="">先选择分支...</option>
                             <!-- 动态填充 -->
                         </select>
                     </div>
@@ -465,6 +492,7 @@ document.getElementById('new-training-form').addEventListener('submit', async (e
         training_name: formData.get('training_name'),
         model_commit_id: parseInt(formData.get('model_commit_id')),
         dataset_id: parseInt(formData.get('dataset_id')),
+        version_id: parseInt(formData.get('version_id')),  // 新增：数据集版本ID
         hyperparameters: {
             epochs: parseInt(formData.get('epochs')),
             batch_size: parseInt(formData.get('batch_size')),
@@ -567,9 +595,146 @@ function escapeHtml(text) {
 document.getElementById('status-filter').addEventListener('change', loadTrainings);
 document.getElementById('search-input').addEventListener('input', loadTrainings);
 
+// 数据集选择变化时加载版本
+document.getElementById('dataset-select').addEventListener('change', async (e) => {
+    const datasetId = e.target.value;
+    const versionSelect = document.getElementById('dataset-version-select');
+    
+    if (!datasetId) {
+        versionSelect.innerHTML = '<option value="">先选择数据集...</option>';
+        versionSelect.disabled = true;
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/datasets/${datasetId}/versions`);
+        const data = await response.json();
+        
+        if (data.success && data.versions && data.versions.length > 0) {
+            versionSelect.innerHTML = data.versions.map(v => 
+                `<option value="${v.version_id}">版本 ${v.version_number} - ${v.message || '无描述'} (${formatTime(v.created_at)})</option>`
+            ).join('');
+            versionSelect.disabled = false;
+        } else {
+            versionSelect.innerHTML = '<option value="">该数据集暂无版本</option>';
+            versionSelect.disabled = true;
+        }
+    } catch (err) {
+        console.error('Error loading versions:', err);
+        versionSelect.innerHTML = '<option value="">加载失败</option>';
+        versionSelect.disabled = true;
+    }
+});
+
+// 模型选择变化时加载分支
+document.getElementById('model-select').addEventListener('change', async (e) => {
+    const modelId = e.target.value;
+    const branchSelect = document.getElementById('model-branch-select');
+    const commitSelect = document.getElementById('model-commit-select');
+    
+    if (!modelId) {
+        branchSelect.innerHTML = '<option value="">先选择模型...</option>';
+        branchSelect.disabled = true;
+        commitSelect.innerHTML = '<option value="">先选择分支...</option>';
+        commitSelect.disabled = true;
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/models/${modelId}`);
+        const data = await response.json();
+        
+        if (data.success && data.branches && data.branches.length > 0) {
+            branchSelect.innerHTML = data.branches.map(b => 
+                `<option value="${b.branch_name}">${b.branch_name}${b.is_default ? ' (默认)' : ''}</option>`
+            ).join('');
+            branchSelect.disabled = false;
+            // 自动触发分支选择加载 commit
+            branchSelect.dispatchEvent(new Event('change'));
+        } else {
+            branchSelect.innerHTML = '<option value="">该模型暂无分支</option>';
+            branchSelect.disabled = true;
+            commitSelect.innerHTML = '<option value="">先选择分支...</option>';
+            commitSelect.disabled = true;
+        }
+    } catch (err) {
+        console.error('Error loading branches:', err);
+        branchSelect.innerHTML = '<option value="">加载失败</option>';
+        branchSelect.disabled = true;
+    }
+});
+
+// 分支选择变化时加载 Commit
+document.getElementById('model-branch-select').addEventListener('change', async (e) => {
+    const modelId = document.getElementById('model-select').value;
+    const branchName = e.target.value;
+    const commitSelect = document.getElementById('model-commit-select');
+    
+    if (!modelId || !branchName) {
+        commitSelect.innerHTML = '<option value="">先选择分支...</option>';
+        commitSelect.disabled = true;
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/models/${modelId}/commits?branch=${encodeURIComponent(branchName)}`);
+        const data = await response.json();
+        
+        if (data.success && data.commits && data.commits.length > 0) {
+            // 按时间倒序，最新的在前面
+            const sortedCommits = [...data.commits].reverse();
+            commitSelect.innerHTML = sortedCommits.map((c, idx) => 
+                `<option value="${c.commit_id}">${c.commit_id.toString().slice(-8)} - ${c.message || '无描述'} (${formatTime(c.created_at)})${idx === 0 ? ' (最新)' : ''}</option>`
+            ).join('');
+            commitSelect.disabled = false;
+        } else {
+            commitSelect.innerHTML = '<option value="">该分支暂无提交</option>';
+            commitSelect.disabled = true;
+        }
+    } catch (err) {
+        console.error('Error loading commits:', err);
+        commitSelect.innerHTML = '<option value="">加载失败</option>';
+        commitSelect.disabled = true;
+    }
+});
+
+// 加载数据集列表
+async function loadDatasets() {
+    try {
+        const response = await fetch('/api/datasets');
+        const data = await response.json();
+        
+        if (data.success && data.datasets) {
+            const select = document.getElementById('dataset-select');
+            select.innerHTML = '<option value="">选择数据集...</option>' + 
+                data.datasets.map(d => `<option value="${d.dataset_id}">${d.dataset_name}</option>`).join('');
+        }
+    } catch (err) {
+        console.error('Error loading datasets:', err);
+    }
+}
+
+// 加载模型列表
+async function loadModels() {
+    try {
+        const response = await fetch('/api/models');
+        const data = await response.json();
+        
+        if (data.success && data.models) {
+            const select = document.getElementById('model-select');
+            select.innerHTML = '<option value="">选择模型...</option>' + 
+                data.models.map(m => `<option value="${m.model_id}">${m.model_name}</option>`).join('');
+        }
+    } catch (err) {
+        console.error('Error loading models:', err);
+    }
+}
+
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
     loadTrainings();
+    loadDatasets();
+    loadModels();
     // 每30秒刷新一次
     setInterval(loadTrainings, 30000);
 });

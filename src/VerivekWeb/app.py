@@ -869,6 +869,7 @@ def create_training():
         training_name = data.get('training_name', '').strip()
         model_commit_id = data.get('model_commit_id')
         dataset_id = data.get('dataset_id')
+        version_id = data.get('version_id')  # 新增：数据集版本ID
         preprocessed_id = data.get('preprocessed_id')
         hyperparameters = data.get('hyperparameters', {})
 
@@ -934,6 +935,54 @@ def create_training():
 
         # ==================== 自动生成并保存训练脚本 ====================
         try:
+            # 保存到配置的目录
+            script_dir = os.path.join(TRAINING_SCRIPTS_DIR, str(training_id))
+            os.makedirs(script_dir, exist_ok=True)
+
+            # 下载数据集到脚本同级目录的 data/ 文件夹
+            data_dir = os.path.join(script_dir, 'data')
+            os.makedirs(data_dir, exist_ok=True)
+
+            if dataset_id:
+                # 使用指定的版本ID或自动获取最新版本
+                if version_id:
+                    print(f"[INFO] 正在下载数据集 {dataset_id} 的指定版本 {version_id}")
+                    dataset_manager.extract_dataset_version(dataset_id, version_id, data_dir)
+                else:
+                    # 获取数据集最新版本
+                    dataset_detail = dataset_manager.get_dataset_detail(dataset_id)
+                    versions = dataset_detail.get('versions', [])
+                    if versions:
+                        latest_version = versions[0]
+                        version_id = latest_version['version_id']
+                        print(f"[INFO] 正在下载数据集 {dataset_id} 的最新版本 {version_id}")
+                        dataset_manager.extract_dataset_version(dataset_id, version_id, data_dir)
+                    else:
+                        raise RuntimeError(f"数据集 {dataset_id} 没有可用版本")
+                print(f"[INFO] 数据集下载完成: {data_dir}")
+            elif preprocessed_id:
+                # 下载预处理数据集
+                preprocessed = dataset_manager.repo.get_preprocessed(preprocessed_id)
+                if preprocessed and preprocessed.get('data_object_key'):
+                    preprocessed_data_key = preprocessed['data_object_key']
+                    preprocessed_bucket = preprocessed.get('bucket_name', 'verivek-datasets')
+                    print(f"[INFO] 正在下载预处理数据集 {preprocessed_id}")
+                    import zipfile
+                    temp_zip = os.path.join(script_dir, 'preprocessed_temp.zip')
+                    dataset_manager.db_client.s3_client.download_file(
+                        preprocessed_bucket,
+                        preprocessed_data_key,
+                        temp_zip
+                    )
+                    with zipfile.ZipFile(temp_zip, 'r') as zf:
+                        zf.extractall(data_dir)
+                    os.remove(temp_zip)
+                    print(f"[INFO] 预处理数据集下载完成: {data_dir}")
+
+            # 更新 dataset_config 使用本地数据路径
+            if dataset_config:
+                dataset_config['data_root'] = data_dir
+
             # 类名固定为 "Model"
             generator = TrainingCodeGenerator(
                 model_class_name="Model",  # 固定类名
@@ -941,10 +990,6 @@ def create_training():
                 dataset_config=dataset_config
             )
             generated_code = generator.generate()
-
-            # 保存到配置的目录
-            script_dir = os.path.join(TRAINING_SCRIPTS_DIR, str(training_id))
-            os.makedirs(script_dir, exist_ok=True)
 
             train_script_path = os.path.join(script_dir, 'train.py')
             with open(train_script_path, 'w', encoding='utf-8') as f:
@@ -967,9 +1012,10 @@ def create_training():
             metadata = {
                 'training_id': training_id,
                 'training_name': training_name,
-                'model_class_name': 'Model',  # 记录使用的固定类名
+                'model_class_name': 'Model',
                 'hyperparameters': hyperparameters,
                 'dataset_config': dataset_config,
+                'version_id': version_id,
                 'created_at': time.strftime('%Y-%m-%d %H:%M:%S')
             }
             metadata_path = os.path.join(script_dir, 'config.json')
