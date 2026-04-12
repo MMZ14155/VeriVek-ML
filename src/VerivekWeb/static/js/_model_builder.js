@@ -614,7 +614,9 @@ async function confirmSave() {
 
         const result = await response.json();
         if (result.success) {
-            alert('架构保存成功！');
+            // 显示详细的保存成功信息
+            const paramsInfo = result.params ? `\n参数量: ${result.params.total_params}\n模型大小: ${result.params.model_size_mb} MB` : '';
+            alert(`架构保存成功！\n\n模型名称: ${result.model_name}${paramsInfo}\n\n已自动保存为私有架构，可在"模型管理"中查看。`);
             closeSaveModal();
         } else {
             alert('保存失败: ' + result.error);
@@ -720,11 +722,156 @@ function autoLayout() {
 function updateStats() {
     document.getElementById('stat-nodes').textContent = nodes.length;
     document.getElementById('stat-connections').textContent = connections.length;
+    // 架构变化时自动计算参数量
+    debounceCalculateParams();
 }
 
 function updateArchitectureStats(stats) {
     // 可以在属性面板底部显示后端返回的统计信息
     console.log('架构统计:', stats);
+}
+
+// ==================== 参数量计算 ====================
+
+let paramsDebounceTimer;
+
+function debounceCalculateParams() {
+    clearTimeout(paramsDebounceTimer);
+    paramsDebounceTimer = setTimeout(() => calculateParams(), 800);
+}
+
+async function calculateParams() {
+    // 检查是否有足够的节点
+    if (nodes.length < 2) {
+        updateParamsDisplay(null);
+        return;
+    }
+
+    const statusEl = document.getElementById('params-status');
+    if (statusEl) {
+        statusEl.textContent = '计算中...';
+        statusEl.className = 'text-xs text-yellow-500';
+    }
+
+    try {
+        // 获取输入节点配置
+        const inputNode = nodes.find(n => n.type === 'Input');
+        let inputChannels = 3;
+        let inputSize = [224, 224];
+
+        if (inputNode && inputNode.properties) {
+            const shape = inputNode.properties.shape || [1, 3, 224, 224];
+            if (shape.length >= 3) {
+                inputChannels = shape[1] || 3;
+                inputSize = [shape[2] || 224, shape[3] || 224];
+            }
+        }
+
+        const response = await fetch('/api/architecture/params', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                graph_structure: exportGraph(),
+                input_channels: inputChannels,
+                input_size: inputSize
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            updateParamsDisplay(data.params);
+        } else {
+            updateParamsDisplay(null, data.error || '计算失败');
+        }
+    } catch (err) {
+        console.error('参数量计算错误:', err);
+        updateParamsDisplay(null, '网络错误');
+    }
+}
+
+function updateParamsDisplay(params, error) {
+    const paramsEl = document.getElementById('stat-params');
+    const sizeEl = document.getElementById('stat-model-size');
+    const statusEl = document.getElementById('params-status');
+    const layerListEl = document.getElementById('params-layer-list');
+
+    if (error) {
+        if (paramsEl) paramsEl.textContent = '-';
+        if (sizeEl) sizeEl.textContent = '模型大小: -';
+        if (statusEl) {
+            statusEl.textContent = error;
+            statusEl.className = 'text-xs text-red-500';
+        }
+        return;
+    }
+
+    if (!params || params.total_params === 0) {
+        if (paramsEl) paramsEl.textContent = '-';
+        if (sizeEl) sizeEl.textContent = '模型大小: -';
+        if (statusEl) {
+            statusEl.textContent = '无参数层';
+            statusEl.className = 'text-xs text-gray-500';
+        }
+        if (layerListEl) layerListEl.innerHTML = '';
+        return;
+    }
+
+    // 更新总参数量
+    if (paramsEl) {
+        paramsEl.textContent = params.total_params_formatted || formatParams(params.total_params);
+    }
+
+    // 更新模型大小
+    if (sizeEl) {
+        sizeEl.textContent = `模型大小: ${params.total_size_mb} MB (FP32) / ${params.total_size_mb_fp16} MB (FP16)`;
+    }
+
+    // 更新状态
+    if (statusEl) {
+        statusEl.textContent = `${params.layer_count} 个可训练层`;
+        statusEl.className = 'text-xs text-emerald-500';
+    }
+
+    // 更新层详情列表
+    if (layerListEl && params.layer_details) {
+        layerListEl.innerHTML = params.layer_details.map(layer => `
+            <div class="flex justify-between items-center p-1.5 bg-white/5 rounded hover:bg-white/10 transition-colors">
+                <div class="flex items-center space-x-2">
+                    <span class="text-indigo-400 font-medium">${layer.type}</span>
+                    <span class="text-gray-600">#${layer.node_id}</span>
+                </div>
+                <div class="text-right">
+                    <div class="text-gray-300">${formatParams(layer.params)}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+}
+
+function formatParams(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(2) + 'M';
+    } else if (num >= 1000) {
+        return (num / 1000).toFixed(2) + 'K';
+    }
+    return num.toString();
+}
+
+function toggleParamsDetails() {
+    const detailsEl = document.getElementById('params-details');
+    const iconEl = document.getElementById('params-details-icon');
+    const textEl = document.getElementById('params-details-text');
+
+    if (detailsEl.classList.contains('hidden')) {
+        detailsEl.classList.remove('hidden');
+        iconEl.style.transform = 'rotate(90deg)';
+        textEl.textContent = '收起详情';
+    } else {
+        detailsEl.classList.add('hidden');
+        iconEl.style.transform = 'rotate(0deg)';
+        textEl.textContent = '查看详情';
+    }
 }
 
 function showValidationErrors(errors) {

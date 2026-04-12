@@ -331,9 +331,125 @@ class ArchitectureGenerator:
             layer_name = self.generate_layer_name(node)
             return f"        {output_var} = {layer_name}({input_var})", output_var
 
-    def generate_code(self, class_name: str = "Model") -> str:
+    def _analyze_variable_reuse(self, sorted_nodes: List[Dict]) -> Dict[int, str]:
         """
-        生成完整的PyTorch模型代码，集成形状传播
+        分析哪些节点的变量可以被复用
+        
+        核心思想：
+        - 计算每个节点的输出被多少个后续节点引用（引用计数）
+        - 如果节点A的输出只被节点B使用，且B只有一个输入来自A，则B可以复用A的变量名
+        
+        返回: node_id -> 复用的变量名（如果不可复用则为None）
+        """
+        # 计算每个节点的出度（即输出被多少节点引用）
+        out_degree = defaultdict(int)
+        # 记录每个节点的输入来源数量
+        input_count = defaultdict(int)
+        
+        for node in sorted_nodes:
+            node_id = node['id']
+            # 统计该节点的输出被多少节点引用
+            for next_id, _, _ in self.adj[node_id]:
+                out_degree[node_id] += 1
+                input_count[next_id] += 1
+        
+        # 确定哪些变量可以被复用
+        var_reuse_map = {}  # node_id -> 复用哪个节点的变量名
+        var_alias = {}      # node_id -> 实际使用的变量名
+        
+        for node in sorted_nodes:
+            node_id = node['id']
+            node_type = node['type']
+            
+            if node_type == 'Input':
+                var_alias[node_id] = 'x'
+                continue
+            
+            # 找到当前节点的输入来源
+            input_sources = []
+            for conn in self.connections:
+                if conn['to']['nodeId'] == node_id:
+                    from_id = conn['from']['nodeId']
+                    input_sources.append(from_id)
+            
+            # 变量复用条件：
+            # 1. 只有一个输入来源
+            # 2. 输入来源节点的输出只被当前节点引用（引用计数为1）
+            # 3. 当前节点不是Output节点（需要保留return语句的清晰性）
+            # 4. 输入来源不是Input节点（保持x的特殊性）
+            if (len(input_sources) == 1 and 
+                out_degree[input_sources[0]] == 1 and 
+                node_type != 'Output' and
+                self.node_map[input_sources[0]]['type'] != 'Input'):
+                
+                source_id = input_sources[0]
+                # 继承源节点的变量别名
+                reused_var = var_alias.get(source_id, f"x_{source_id}")
+                var_reuse_map[node_id] = reused_var
+                var_alias[node_id] = reused_var
+            else:
+                # 创建新变量名
+                var_alias[node_id] = f"x_{node_id}"
+        
+        return var_reuse_map
+
+    def generate_forward_line_optimized(self, node: Dict, input_var: str, 
+                                        output_var: str, reuse_input: bool = False) -> str:
+        """
+        生成优化后的forward代码行，支持变量名复用
+        
+        Args:
+            node: 当前节点
+            input_var: 输入变量名
+            output_var: 输出变量名（可能与input_var相同表示复用）
+            reuse_input: 是否复用输入变量名
+        """
+        node_type = node['type']
+        node_id = node['id']
+        
+        # 如果复用输入变量，赋值目标是input_var
+        target_var = input_var if reuse_input else output_var
+        
+        if node_type == 'Input':
+            return f"        # Input: {self.input_shape}"
+
+        elif node_type == 'Output':
+            return f"        return {input_var}"
+
+        elif node_type == 'Flatten':
+            shape = self.node_shapes.get(node_id, [0, -1])
+            if len(shape) == 2:
+                return f"        {target_var} = {input_var}.view({input_var}.size(0), {shape[1]})"
+            return f"        {target_var} = {input_var}.view({input_var}.size(0), -1)"
+
+        elif node_type == 'View':
+            shape = node.get('properties', {}).get('shape', [-1, 512])
+            shape_str = ", ".join(str(s) if s != -1 else f"{input_var}.size(0)" if i == 0 else "-1"
+                                  for i, s in enumerate(shape))
+            return f"        {target_var} = {input_var}.view({shape_str})"
+
+        elif node_type in ['ReLU', 'Sigmoid', 'Tanh']:
+            return f"        {target_var} = F.{node_type.lower()}({input_var})"
+
+        elif node_type == 'Softmax':
+            dim = node.get('properties', {}).get('dim', 1)
+            return f"        {target_var} = F.{node_type.lower()}({input_var}, dim={dim})"
+
+        elif node_type == 'Dropout':
+            layer_name = self.generate_layer_name(node)
+            return f"        {target_var} = {layer_name}({input_var})"
+
+        else:
+            layer_name = self.generate_layer_name(node)
+            return f"        {target_var} = {layer_name}({input_var})"
+
+    def generate_code(self, class_name: str = "Model", optimize_vars: bool = True) -> str:
+        """
+        生成完整的PyTorch模型代码，集成形状传播和变量名优化
+        
+        Args:
+            class_name: 生成的类名
+            optimize_vars: 是否启用变量名复用优化
         """
         # 1. 拓扑排序
         sorted_nodes = self.topological_sort()
@@ -341,7 +457,6 @@ class ArchitectureGenerator:
         # 2. 形状传播和参数推断
         current_shape = self.input_shape.copy()
         layer_defs = []
-        shape_comments = []  # 用于forward中的形状注释
 
         for node in sorted_nodes:
             node_id = node['id']
@@ -362,9 +477,12 @@ class ArchitectureGenerator:
 
             current_shape = output_shape
 
-        # 3. 生成forward代码
+        # 3. 分析变量复用机会
+        var_reuse_map = self._analyze_variable_reuse(sorted_nodes) if optimize_vars else {}
+
+        # 4. 生成forward代码
         forward_lines = []
-        var_map = {}
+        var_map = {}  # node_id -> 实际使用的变量名
 
         for node in sorted_nodes:
             node_id = node['id']
@@ -379,17 +497,29 @@ class ArchitectureGenerator:
             # 找到输入变量
             input_node_info = self.get_input_node(node_id)
             input_var = var_map.get(input_node_info[0], 'x') if input_node_info else 'x'
+            
+            # 确定输出变量名
+            if node_id in var_reuse_map:
+                # 复用输入变量名
+                output_var = var_reuse_map[node_id]
+                reuse_input = True
+            else:
+                # 创建新变量名
+                output_var = f"x_{node_id}"
+                reuse_input = False
+            
+            var_map[node_id] = output_var
 
-            line, output_var = self.generate_forward_line(node, input_var)
+            # 生成代码行
+            line = self.generate_forward_line_optimized(node, input_var, output_var, reuse_input)
 
             # 添加形状注释（对关键层）
             if node_type in ['Conv2d', 'Linear', 'MaxPool2d', 'Flatten', 'View']:
                 line += f"  # shape: {shape}"
 
             forward_lines.append(line)
-            var_map[node_id] = output_var
 
-        # 4. 组装代码
+        # 5. 组装代码
         code_lines = [
             "import torch",
             "import torch.nn as nn",

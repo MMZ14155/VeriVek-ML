@@ -726,6 +726,130 @@ def generate_architecture():
             'error': str(e)
         }), 400
 
+@app.route('/api/architecture/params', methods=['POST'])
+def calculate_architecture_params():
+    """计算架构的参数量"""
+    try:
+        data = request.get_json()
+        graph = data.get('graph_structure', {})
+        input_channels = data.get('input_channels', 3)
+        input_size = data.get('input_size', [224, 224])
+
+        # 使用生成器计算参数量
+        generator = ArchitectureGenerator(
+            graph,
+            input_channels=input_channels,
+            input_size=tuple(input_size) if isinstance(input_size, list) else input_size
+        )
+        params_info = generator.calculate_params()
+
+        return jsonify({
+            'success': True,
+            'params': params_info
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/api/architecture/save', methods=['POST'])
+@auth_required
+def save_architecture():
+    """保存架构设计到数据库（转换为Python代码后保存）"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '请求体不能为空'}), 400
+
+        # 获取参数
+        architecture_name = data.get('architecture_name', '').strip()
+        description = data.get('description', '').strip()
+        tags = data.get('tags', '').strip()
+        graph = data.get('graph_structure', {})
+
+        if not architecture_name:
+            return jsonify({'success': False, 'error': '架构名称不能为空'}), 400
+
+        if not graph or not graph.get('nodes'):
+            return jsonify({'success': False, 'error': '架构图结构不能为空'}), 400
+
+        # 获取输入节点配置（用于生成更准确的代码）
+        input_node = None
+        for node in graph.get('nodes', []):
+            if node.get('type') == 'Input':
+                input_node = node
+                break
+
+        input_channels = 3
+        input_size = (224, 224)
+        if input_node and input_node.get('properties', {}).get('shape'):
+            shape = input_node['properties']['shape']
+            if len(shape) >= 4:
+                input_channels = shape[1]
+                input_size = (shape[2], shape[3])
+
+        # 生成Python代码
+        generator = ArchitectureGenerator(
+            graph,
+            input_channels=input_channels,
+            input_size=input_size
+        )
+        class_name = architecture_name.replace(' ', '_').replace('-', '_')
+        generated_code = generator.generate_code(class_name=class_name)
+
+        # 创建临时文件保存生成的代码
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+            f.write(generated_code)
+            temp_path = f.name
+
+        try:
+            # 获取当前用户ID
+            user_id = session.get('user_id', 0)
+
+            # 使用 model_manager 导入模型（保存为私有）
+            commit_id = model_manager.import_model(
+                model_name=architecture_name,
+                branch_name='main',
+                model_path=temp_path,
+                message=f"从架构设计器创建: {description or '无描述'}",
+                author=user_id,
+                tags=tags,
+                description=description,
+                visibility='private'  # 自动保存为私有架构
+            )
+
+            # 计算参数量
+            params_info = generator.calculate_params()
+
+            return jsonify({
+                'success': True,
+                'commit_id': commit_id,
+                'model_name': architecture_name,
+                'params': {
+                    'total_params': params_info.get('total_params_formatted', '0'),
+                    'model_size_mb': params_info.get('total_size_mb', 0)
+                },
+                'message': f'架构 "{architecture_name}" 已成功保存为私有模型'
+            })
+
+        finally:
+            # 清理临时文件
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
 @app.route('/api/trainings', methods=['POST'])
 def create_training():
     """创建新的训练任务（支持原始数据集或预处理数据集，互斥）"""

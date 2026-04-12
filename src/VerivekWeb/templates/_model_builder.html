@@ -447,7 +447,7 @@
             <!-- 结构预览 -->
             <div class="p-4 border-t border-white/5 bg-black/20">
                 <h4 class="text-xs font-medium text-gray-400 mb-2">当前架构统计</h4>
-                <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="grid grid-cols-2 gap-2 text-xs mb-3">
                     <div class="bg-white/5 rounded-lg p-2">
                         <div class="text-gray-500">节点数</div>
                         <div class="text-white font-mono" id="stat-nodes">0</div>
@@ -457,6 +457,28 @@
                         <div class="text-white font-mono" id="stat-connections">0</div>
                     </div>
                 </div>
+                <!-- 参数量显示 -->
+                <div class="bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="text-xs text-indigo-300">参数量</div>
+                        <div class="text-xs text-gray-500" id="params-status">计算中...</div>
+                    </div>
+                    <div class="text-lg font-mono font-bold text-indigo-200" id="stat-params">-</div>
+                    <div class="text-xs text-gray-500 mt-1" id="stat-model-size">模型大小: -</div>
+                </div>
+                <!-- 参数详情展开 -->
+                <div id="params-details" class="hidden mt-2 space-y-1">
+                    <div class="text-xs text-gray-500 font-medium">各层参数详情</div>
+                    <div id="params-layer-list" class="max-h-32 overflow-y-auto space-y-1 text-xs">
+                        <!-- 动态生成 -->
+                    </div>
+                </div>
+                <button onclick="toggleParamsDetails()" class="mt-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex items-center">
+                    <svg id="params-details-icon" class="w-3 h-3 mr-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                    <span id="params-details-text">查看详情</span>
+                </button>
             </div>
         </div>
     </div>

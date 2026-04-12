@@ -550,9 +550,9 @@ CREATE OR REPLACE PROCEDURE create_training(
     IN p_training_name VARCHAR(100),
     IN p_model_commit_id INTEGER,
     IN p_dataset_id INTEGER,
+    OUT p_training_id INTEGER,
     IN p_hyperparameters JSONB DEFAULT '{}',
-    IN p_description TEXT DEFAULT NULL,
-    OUT p_training_id INTEGER
+    IN p_description TEXT DEFAULT NULL
 )
 LANGUAGE plpgsql
 AS $$
