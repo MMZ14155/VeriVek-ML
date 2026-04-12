@@ -58,6 +58,11 @@ def login():
         return redirect(url_for('dashboard'))
     return render_template('login.html')
 
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    return redirect(url_for('login'))
+
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -279,7 +284,9 @@ def create_dataset():
             description = request.form.get('description', '').strip()
             tags = request.form.get('tags', '').strip()
             message = request.form.get('message', 'Initial import').strip()
-            created_by = request.form.get('created_by', 'anonymous').strip()
+            visibility = request.form.get('visibility', 'private').strip()
+            # 从 session 获取当前用户ID
+            user_id = session.get('user_id', 0)
 
             # 调用 DatasetManager 导入（自动打包成 zip）
             version_id = dataset_manager.import_dataset(
@@ -289,8 +296,9 @@ def create_dataset():
                 tags=tags,
                 description=description,
                 message=message,
-                created_by=created_by,
-                compression_format='zip'  # 强制使用 zip
+                created_by=user_id,
+                compression_format='zip',  # 强制使用 zip
+                visibility=visibility
             )
 
             return jsonify({
@@ -380,12 +388,15 @@ def create_dataset_version(dataset_id):
                 os.makedirs(os.path.dirname(file_path), exist_ok=True)
                 file.save(file_path)
 
+            # 从 session 获取当前用户ID
+            user_id = session.get('user_id', 0)
+
             # 调用 DatasetManager 追加版本
             version_id = dataset_manager.append_patch(
                 dataset_id=dataset_id,
                 source_path=source_folder,
                 message=message,
-                created_by=request.form.get('created_by', 'anonymous'),
+                created_by=user_id,
                 update_mode=update_mode
             )
 
@@ -415,15 +426,14 @@ def create_preprocess_job(dataset_id: int):
         if not name or not script:
             return jsonify({'error': '名称和脚本不能为空'}), 400
 
-        # 【关键】完全不读取 parent_preprocessed_id，也不提供此参数给 Manager
-        # 未来启用时，只需添加：
-        # parent_id = request.form.get('parent_preprocessed_id', type=int)
+        # 从 session 获取当前用户ID
+        user_id = session.get('user_id', 0)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             script_path = os.path.join(temp_dir, secure_filename(script.filename))
             script.save(script_path)
 
-            # 调用 Manager，不传 parent_preprocessed_id（默认为 None）
+            # 调用 Manager，不传 parent_preprocessed_id（强制为 None）
             preprocessed_id = dataset_manager.preprocess_dataset(
                 dataset_id=dataset_id,
                 name=name,
@@ -431,7 +441,7 @@ def create_preprocess_job(dataset_id: int):
                 source_version_id=source_version,  # 仅支持基于原始版本
                 # parent_preprocessed_id 不传，强制为 None
                 config=config,
-                created_by=request.form.get('created_by', 'anonymous')
+                created_by=user_id
             )
 
             return jsonify({
@@ -625,7 +635,9 @@ def import_model():
         description = request.form.get('description', '').strip()
         tags = request.form.get('tags', '').strip()
         message = request.form.get('message', 'Initial import').strip()
-        author = request.form.get('author', 'anonymous').strip()
+        visibility = request.form.get('visibility', 'private').strip()
+        # 从 session 获取当前用户ID
+        user_id = session.get('user_id', 0)
 
         if not model_name:
             return jsonify({'error': '模型名称不能为空'}), 400
@@ -642,9 +654,10 @@ def import_model():
                 branch_name=branch_name,
                 model_path=temp_path,
                 message=message,
-                author=author,
+                author=user_id,
                 tags=tags,
-                description=description
+                description=description,
+                visibility=visibility
             )
 
             return jsonify({
@@ -756,6 +769,9 @@ def create_training():
             if not preprocessed:
                 return jsonify({'success': False, 'error': '指定的预处理数据集不存在'}), 404
 
+        # 从 session 获取当前用户ID
+        user_id = session.get('user_id', 0)
+
         # 创建训练（传递数据源参数）
         training_id = training_manager.create_training(
             training_name=training_name,
@@ -764,7 +780,7 @@ def create_training():
             dataset_id=dataset_id,
             preprocessed_id=preprocessed_id,
             description=data.get('description', ''),
-            created_by=data.get('created_by', 'anonymous'),
+            created_by=user_id,
             branch_id=commit_info.get('branch_id'),
             gpu_type=data.get('gpu_type', ''),
             gpu_count=data.get('gpu_count', 0)

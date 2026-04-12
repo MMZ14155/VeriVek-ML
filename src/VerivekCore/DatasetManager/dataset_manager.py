@@ -45,8 +45,9 @@ class DatasetManager:
             tags: str = "",
             description: str = "",
             message: str = "数据导入",
-            created_by: str = "anonymous",
-            compression_format: str = "zip") -> int:
+            created_by: int = 0,
+            compression_format: str = "zip",
+            visibility: str = "private") -> int:
         return self.importer.import_dataset(
             dataset_name=dataset_name,
             source_path=source_path,
@@ -54,7 +55,8 @@ class DatasetManager:
             tags=tags,
             description=description,
             message=message,
-            created_by=created_by
+            created_by=created_by,
+            visibility=visibility
         )
 
     def append_patch(
@@ -62,7 +64,7 @@ class DatasetManager:
             dataset_id: int,
             source_path: str,
             message: str = "追加数据",
-            created_by: str = "anonymous",
+            created_by: int = 0,
             update_mode: str = "append"
     ) -> int:
         dataset = self.repo.get_dataset_by_id(dataset_id)
@@ -134,7 +136,7 @@ class DatasetManager:
             source_version_id: Optional[int] = None,
             parent_preprocessed_id: Optional[int] = None,
             config: Optional[Dict] = None,
-            created_by: str = "anonymous"
+            created_by: int = 0
     ) -> int:
         """
         创建预处理任务

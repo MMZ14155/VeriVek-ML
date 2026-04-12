@@ -19,7 +19,7 @@ class ModelManager:
             branch_name: str,
             model_path: str,
             message: str = "",
-            author: str = "",
+            author: int = 0,
             **kwargs
     ) -> int:
         return self.importer.import_model(

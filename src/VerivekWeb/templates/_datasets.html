@@ -97,11 +97,20 @@
                             placeholder="数据集描述、用途说明..."></textarea>
                     </div>
 
-                    <div class="space-y-2">
-                        <label class="block text-sm text-gray-400">标签（用逗号分隔）</label>
-                        <input type="text" id="import-tags" name="tags"
-                            class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-white"
-                            placeholder="CV, classification, ImageNet...">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-sm text-gray-400">标签（用逗号分隔）</label>
+                            <input type="text" id="import-tags" name="tags"
+                                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-white"
+                                placeholder="CV, classification, ImageNet...">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-sm text-gray-400">可见性</label>
+                            <select id="import-visibility" name="visibility" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 text-white">
+                                <option value="private">私有</option>
+                                <option value="public">公有</option>
+                            </select>
+                        </div>
                     </div>
 
                     <input type="hidden" id="import-message" name="message" value="Initial import">

@@ -218,6 +218,18 @@ class DatasetRepository:
                 }
             return None
 
+    def can_access_dataset(self, user_id: int, dataset_id: int) -> bool:
+        """检查用户是否有权访问数据集"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("SELECT can_access_dataset(%s, %s)", (user_id, dataset_id))
+            return cur.fetchone()[0]
+
+    def can_modify_dataset(self, user_id: int, dataset_id: int) -> bool:
+        """检查用户是否有权修改数据集"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("SELECT can_modify_dataset(%s, %s)", (user_id, dataset_id))
+            return cur.fetchone()[0]
+
     def create_version(
             self,
             dataset_id: int,
@@ -232,7 +244,7 @@ class DatasetRepository:
             added_size_bytes: int,
             cumulative_rows: int,
             message: str = "",
-            created_by: str = ""
+            created_by: int = 0
     ) -> int:
         with self.db.db_conn.cursor() as cur:
             cur.execute(

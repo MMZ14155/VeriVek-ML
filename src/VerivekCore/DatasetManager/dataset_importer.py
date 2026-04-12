@@ -20,7 +20,8 @@ class DatasetImporter:
             tags: str = "",
             description: str = "",
             message: str = "数据导入",
-            created_by: str = "anonymous"
+            created_by: int = 0,
+            visibility: str = "private"
     ) -> int:
 
         existing = self.repo.get_dataset(dataset_name)
@@ -31,7 +32,7 @@ class DatasetImporter:
             cumulative_rows_before = existing["total_rows"]
             existing_total_size = existing["total_size_bytes"]
         else:
-            dataset_id = self.repo.create_dataset(dataset_name, description, format, tags)
+            dataset_id = self.repo.create_dataset(dataset_name, description, format, tags, visibility)
             parent_version_id = None
             cumulative_rows_before = 0
             existing_total_size = 0

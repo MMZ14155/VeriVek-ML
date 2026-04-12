@@ -6,6 +6,18 @@ class ModelRepository:
     def __init__(self, db_client: DbClient):
         self.db = db_client
 
+    def can_access_model(self, user_id: int, model_id: int) -> bool:
+        """检查用户是否有权访问模型"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("SELECT can_access_model(%s, %s)", (user_id, model_id))
+            return cur.fetchone()[0]
+
+    def can_modify_model(self, user_id: int, model_id: int) -> bool:
+        """检查用户是否有权修改模型"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("SELECT can_modify_model(%s, %s)", (user_id, model_id))
+            return cur.fetchone()[0]
+
     def get_model_by_name(self, model_name: str) -> Optional[Dict]:
         with self.db.db_conn.cursor() as cur:
             cur.execute("SELECT model_id, description, tags FROM models WHERE model_name = %s",
@@ -50,11 +62,11 @@ class ModelRepository:
                 "tags": r[3], "created_at": r[4], "branch_count": r[5]
             } for r in cur.fetchall()]
 
-    def create_model(self, model_name: str, description: str = "", tags: str = "") -> int:
+    def create_model(self, model_name: str, description: str = "", tags: str = "", visibility: str = "private") -> int:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO models (model_name, description, tags) VALUES (%s, %s, %s) RETURNING model_id",
-                (model_name, description, tags)
+                "INSERT INTO models (model_name, description, tags, visibility) VALUES (%s, %s, %s, %s) RETURNING model_id",
+                (model_name, description, tags, visibility)
             )
             model_id = cur.fetchone()[0]
             self.db.db_conn.commit()
@@ -114,7 +126,7 @@ class ModelRepository:
             return [{"branch_id": r[0], "branch_name": r[1], "is_default": r[2], "head_commit_id": r[3]}
                     for r in cur.fetchall()]
 
-    def create_commit(self, model_id: int, message: str, author: str,
+    def create_commit(self, model_id: int, message: str, author: int,
                       bucket_name: str, object_key: str) -> int:
         with self.db.db_conn.cursor() as cur:
             cur.execute(

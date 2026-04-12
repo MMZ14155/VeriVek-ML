@@ -153,12 +153,10 @@ class DbClient:
             print(f"读取 SQL 文件失败: {e}")
             raise
 
-        statements = [stmt.strip() for stmt in sql_script.split(';') if stmt.strip()]
-
         cursor = self.db_conn.cursor()
         try:
-            for stmt in statements:
-                cursor.execute(stmt)
+            # 直接执行整个 SQL 脚本，正确处理函数/触发器定义中的分号
+            cursor.execute(sql_script)
             self.db_conn.commit()
             if self.verbose:
                 print("数据库初始化完成")

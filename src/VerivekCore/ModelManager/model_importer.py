@@ -11,14 +11,14 @@ class ModelImporter:
         self.bucket_name = "verivek-models"
 
     def import_model(self, model_name: str, branch_name: str, model_path: str,
-                     message: str = "", author: str = "", tags: str = "",
-                     description: str = "") -> int:
+                     message: str = "", author: int = 0, tags: str = "",
+                     description: str = "", visibility: str = "private") -> int:
         try:
             model = self.repo.get_model_by_name(model_name)
             if model:
                 model_id = model["model_id"]
             else:
-                model_id = self.repo.create_model(model_name, description, tags)
+                model_id = self.repo.create_model(model_name, description, tags, visibility)
                 print(f"新建模型 model_id={model_id}")
 
             branch = self.repo.get_branch(model_id, branch_name)

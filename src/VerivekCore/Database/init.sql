@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS users (
     -- 用户配置
     preferences JSONB DEFAULT '{}',
 
+    -- 用户贡献统计
+    dataset_contributions INTEGER DEFAULT 0,
+    model_contributions INTEGER DEFAULT 0,
+    training_count INTEGER DEFAULT 0,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -70,7 +75,7 @@ CREATE TABLE IF NOT EXISTS dataset_versions (
 
     -- 版本注释
     message TEXT,  -- 变更说明
-    created_by VARCHAR(50),
+    created_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     -- 防止自环
@@ -90,7 +95,7 @@ CREATE TABLE IF NOT EXISTS datasets_preprocess (
     data_object_key VARCHAR(255) NOT NULL,
     preprocessing_config JSONB DEFAULT '{}',
     status VARCHAR(20) DEFAULT 'pending',
-    created_by VARCHAR(50) DEFAULT 'anonymous',
+    created_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -127,7 +132,7 @@ CREATE TABLE IF NOT EXISTS model_commits (
     commit_id SERIAL PRIMARY KEY,
     model_id INTEGER NOT NULL REFERENCES models(model_id) ON DELETE CASCADE,
     message TEXT,
-    author VARCHAR(50),
+    author INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
 
     bucket_name VARCHAR(63) DEFAULT 'verivek-models',
     object_key VARCHAR(255) NOT NULL, -- MinIO对象键
@@ -151,7 +156,7 @@ CREATE TABLE IF NOT EXISTS trainings (
     -- 基础信息
     training_name VARCHAR(100),
     description TEXT,
-    created_by VARCHAR(50),
+    created_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
 
     -- 关联模型
     model_commit_id INTEGER NOT NULL REFERENCES model_commits(commit_id),
@@ -256,7 +261,8 @@ LEFT JOIN (
         created_at
     FROM dataset_versions
     ORDER BY dataset_id, version_id ASC
-) dv ON d.dataset_id = dv.dataset_id;
+) dv ON d.dataset_id = dv.dataset_id
+LEFT JOIN users u ON dv.created_by = u.user_id;
 
 -- 取每个模型的根提交的 author 作为创建者
 CREATE OR REPLACE VIEW models_with_creator AS
@@ -275,10 +281,398 @@ LEFT JOIN LATERAL (
       )
     ORDER BY mc.commit_id ASC
     LIMIT 1
-) mc ON true;
+) mc ON true
+LEFT JOIN users u ON mc.author = u.user_id;
 
 CREATE OR REPLACE VIEW trainings_with_creator AS
 SELECT
     t.*,
     created_by AS creator
-FROM trainings t;
+FROM trainings t
+LEFT JOIN users u ON t.created_by = u.user_id;
+
+-- 数据集贡献数触发器函数
+CREATE OR REPLACE FUNCTION update_dataset_contributions()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE users
+        SET dataset_contributions = dataset_contributions + 1
+        WHERE user_id = NEW.created_by;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE users
+        SET dataset_contributions = GREATEST(dataset_contributions - 1, 0)
+        WHERE user_id = OLD.created_by;
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 模型贡献数触发器函数
+CREATE OR REPLACE FUNCTION update_model_contributions()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE users
+        SET model_contributions = model_contributions + 1
+        WHERE user_id = NEW.author;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE users
+        SET model_contributions = GREATEST(model_contributions - 1, 0)
+        WHERE user_id = OLD.author;
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 训练数量触发器函数
+CREATE OR REPLACE FUNCTION update_training_count()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE users
+        SET training_count = training_count + 1
+        WHERE user_id = NEW.created_by;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE users
+        SET training_count = GREATEST(training_count - 1, 0)
+        WHERE user_id = OLD.created_by;
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 创建触发器：数据集版本
+CREATE TRIGGER trg_dataset_versions_contributions
+    AFTER INSERT OR DELETE ON dataset_versions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_dataset_contributions();
+
+-- 创建触发器：模型提交
+CREATE TRIGGER trg_model_commits_contributions
+    AFTER INSERT OR DELETE ON model_commits
+    FOR EACH ROW
+    EXECUTE FUNCTION update_model_contributions();
+
+-- 创建触发器：训练任务
+CREATE TRIGGER trg_trainings_count
+    AFTER INSERT OR DELETE ON trainings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_training_count();
+
+-- 检查用户是否有权访问数据集
+CREATE OR REPLACE FUNCTION can_access_dataset(p_user_id INTEGER, p_dataset_id INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_user_role VARCHAR(20);
+    v_is_public BOOLEAN;
+    v_is_creator BOOLEAN;
+BEGIN
+    -- 获取用户角色
+    SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
+    
+    -- 管理员可以访问所有资源
+    IF v_user_role = 'admin' THEN
+        RETURN TRUE;
+    END IF;
+    
+    -- 获取数据集可见性和创建者信息
+    SELECT 
+        d.visibility = 'public',
+        EXISTS(
+            SELECT 1 FROM dataset_versions dv 
+            WHERE dv.dataset_id = p_dataset_id AND dv.created_by = p_user_id
+            LIMIT 1
+        )
+    INTO v_is_public, v_is_creator
+    FROM datasets d
+    WHERE d.dataset_id = p_dataset_id;
+    
+    -- 公共数据集或创建者可以访问
+    RETURN v_is_public OR v_is_creator;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 检查用户是否有权访问模型
+CREATE OR REPLACE FUNCTION can_access_model(p_user_id INTEGER, p_model_id INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_user_role VARCHAR(20);
+    v_is_public BOOLEAN;
+    v_is_creator BOOLEAN;
+BEGIN
+    -- 获取用户角色
+    SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
+    
+    -- 管理员可以访问所有资源
+    IF v_user_role = 'admin' THEN
+        RETURN TRUE;
+    END IF;
+    
+    -- 获取模型可见性和创建者信息
+    SELECT 
+        m.visibility = 'public',
+        EXISTS(
+            SELECT 1 FROM model_commits mc 
+            WHERE mc.model_id = p_model_id AND mc.author = p_user_id
+            LIMIT 1
+        )
+    INTO v_is_public, v_is_creator
+    FROM models m
+    WHERE m.model_id = p_model_id;
+    
+    -- 公共模型或创建者可以访问
+    RETURN v_is_public OR v_is_creator;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 检查用户是否有权访问训练任务
+CREATE OR REPLACE FUNCTION can_access_training(p_user_id INTEGER, p_training_id INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_user_role VARCHAR(20);
+    v_is_public BOOLEAN;
+    v_is_creator BOOLEAN;
+BEGIN
+    -- 获取用户角色
+    SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
+    
+    -- 管理员可以访问所有资源
+    IF v_user_role = 'admin' THEN
+        RETURN TRUE;
+    END IF;
+    
+    -- 获取训练任务可见性和创建者信息
+    SELECT 
+        t.visibility = 'public',
+        t.created_by = p_user_id
+    INTO v_is_public, v_is_creator
+    FROM trainings t
+    WHERE t.training_id = p_training_id;
+    
+    -- 公共训练或创建者可以访问
+    RETURN v_is_public OR v_is_creator;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 检查用户是否有权修改资源（需要所有者或管理员权限）
+CREATE OR REPLACE FUNCTION can_modify_dataset(p_user_id INTEGER, p_dataset_id INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_user_role VARCHAR(20);
+BEGIN
+    -- 获取用户角色
+    SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
+    
+    -- 管理员可以修改所有资源
+    IF v_user_role = 'admin' THEN
+        RETURN TRUE;
+    END IF;
+    
+    -- 访客不能修改任何资源
+    IF v_user_role = 'guest' THEN
+        RETURN FALSE;
+    END IF;
+    
+    -- 检查是否是创建者
+    RETURN EXISTS(
+        SELECT 1 FROM dataset_versions dv 
+        WHERE dv.dataset_id = p_dataset_id AND dv.created_by = p_user_id
+        LIMIT 1
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- 检查用户是否有权修改模型
+CREATE OR REPLACE FUNCTION can_modify_model(p_user_id INTEGER, p_model_id INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_user_role VARCHAR(20);
+BEGIN
+    -- 获取用户角色
+    SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
+    
+    -- 管理员可以修改所有资源
+    IF v_user_role = 'admin' THEN
+        RETURN TRUE;
+    END IF;
+    
+    -- 访客不能修改任何资源
+    IF v_user_role = 'guest' THEN
+        RETURN FALSE;
+    END IF;
+    
+    -- 检查是否是作者
+    RETURN EXISTS(
+        SELECT 1 FROM model_commits mc 
+        WHERE mc.model_id = p_model_id AND mc.author = p_user_id
+        LIMIT 1
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- 检查用户是否有权修改训练任务
+CREATE OR REPLACE FUNCTION can_modify_training(p_user_id INTEGER, p_training_id INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_user_role VARCHAR(20);
+BEGIN
+    -- 获取用户角色
+    SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
+    
+    -- 管理员可以修改所有资源
+    IF v_user_role = 'admin' THEN
+        RETURN TRUE;
+    END IF;
+    
+    -- 访客不能修改任何资源
+    IF v_user_role = 'guest' THEN
+        RETURN FALSE;
+    END IF;
+    
+    -- 检查是否是创建者
+    RETURN EXISTS(
+        SELECT 1 FROM trainings t 
+        WHERE t.training_id = p_training_id AND t.created_by = p_user_id
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- 存储过程：创建训练任务并初始化权重槽位，要么全部成功，要么全部回滚
+CREATE OR REPLACE PROCEDURE create_training(
+    IN p_user_id INTEGER,
+    IN p_training_name VARCHAR(100),
+    IN p_model_commit_id INTEGER,
+    IN p_dataset_id INTEGER,
+    IN p_hyperparameters JSONB DEFAULT '{}',
+    IN p_description TEXT DEFAULT NULL,
+    OUT p_training_id INTEGER
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_model_id INTEGER;
+    v_has_access BOOLEAN;
+BEGIN
+    -- 获取模型commit对应的model_id
+    SELECT model_id INTO v_model_id 
+    FROM model_commits 
+    WHERE commit_id = p_model_commit_id;
+    
+    IF v_model_id IS NULL THEN
+        RAISE EXCEPTION '模型提交不存在: %', p_model_commit_id;
+    END IF;
+    
+    -- 验证用户是否有权访问该模型
+    SELECT can_access_model(p_user_id, v_model_id) INTO v_has_access;
+    IF NOT v_has_access THEN
+        RAISE EXCEPTION '无权访问该模型';
+    END IF;
+    
+    -- 验证用户是否有权访问该数据集
+    SELECT can_access_dataset(p_user_id, p_dataset_id) INTO v_has_access;
+    IF NOT v_has_access THEN
+        RAISE EXCEPTION '无权访问该数据集';
+    END IF;
+    
+    -- 插入训练记录
+    INSERT INTO trainings (
+        training_name,
+        description,
+        created_by,
+        model_commit_id,
+        dataset_id,
+        hyperparameters,
+        status
+    ) VALUES (
+        p_training_name,
+        p_description,
+        p_user_id,
+        p_model_commit_id,
+        p_dataset_id,
+        p_hyperparameters,
+        'pending'
+    )
+    RETURNING training_id INTO p_training_id;
+    
+    -- 创建 best 权重槽位（初始为空，指向训练开始前的状态）
+    INSERT INTO training_weights (
+        training_id,
+        weight_type,
+        epoch_number,
+        object_key
+    ) VALUES (
+        p_training_id,
+        'best',
+        0,
+        'verivek-weights/training_' || p_training_id || '/best'
+    );
+    
+    -- 创建 last 权重槽位（用于断点续训）
+    INSERT INTO training_weights (
+        training_id,
+        weight_type,
+        epoch_number,
+        object_key
+    ) VALUES (
+        p_training_id,
+        'last',
+        0,
+        'verivek-weights/training_' || p_training_id || '/last'
+    );
+    
+    -- 更新训练记录的外键引用
+    UPDATE trainings 
+    SET 
+        main_weight_id = (SELECT weight_id FROM training_weights WHERE training_id = p_training_id AND weight_type = 'best'),
+        checkpoint_weight_id = (SELECT weight_id FROM training_weights WHERE training_id = p_training_id AND weight_type = 'last')
+    WHERE training_id = p_training_id;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        -- 发生错误时回滚（自动回滚当前事务）
+        RAISE EXCEPTION '创建训练任务失败: %', SQLERRM;
+END;
+$$;
+
+-- 存储过程：级联删除数据集（删除数据集及其所有版本、预处理记录）
+-- 用于管理员清理数据或用户删除自己的数据集
+CREATE OR REPLACE PROCEDURE delete_dataset_cascade(
+    IN p_user_id INTEGER,
+    IN p_dataset_id INTEGER
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_can_modify BOOLEAN;
+    v_version RECORD;
+BEGIN
+    -- 验证用户是否有权删除该数据集
+    SELECT can_modify_dataset(p_user_id, p_dataset_id) INTO v_can_modify;
+    IF NOT v_can_modify THEN
+        RAISE EXCEPTION '无权删除该数据集';
+    END IF;
+    
+    -- 删除所有预处理记录（先删除子表）
+    DELETE FROM datasets_preprocess WHERE dataset_id = p_dataset_id;
+    
+    -- 删除所有版本记录
+    DELETE FROM dataset_versions WHERE dataset_id = p_dataset_id;
+    
+    -- 删除数据集主记录
+    DELETE FROM datasets WHERE dataset_id = p_dataset_id;
+    
+    -- 返回删除成功信息
+    RAISE NOTICE '数据集 % 及其所有版本已删除', p_dataset_id;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE EXCEPTION '删除数据集失败: %', SQLERRM;
+END;
+$$;

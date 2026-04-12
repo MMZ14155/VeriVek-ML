@@ -678,7 +678,7 @@ async function handleCommitUpload(event) {
     const form = event.target;
     const fileInput = document.getElementById('commit-model-file');
     const message = document.getElementById('commit-message').value;
-    const author = document.getElementById('commit-author').value || 'anonymous';
+    const visibility = document.getElementById('model-visibility').value;
     const branch = document.getElementById('commit-branch-select').value;
 
     if (!fileInput.files || fileInput.files.length === 0) {
@@ -704,7 +704,7 @@ async function handleCommitUpload(event) {
         formData.append('model_name', document.getElementById('graph-model-name').textContent);
         formData.append('branch_name', branch);
         formData.append('message', message);
-        formData.append('author', author);
+        formData.append('visibility', visibility);
 
         // 使用 XMLHttpRequest 以便获取上传进度
         const uploadPromise = new Promise((resolve, reject) => {

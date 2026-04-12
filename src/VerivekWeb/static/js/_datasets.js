@@ -67,6 +67,7 @@ async function handleDatasetImport(event) {
     formData.append('format', document.getElementById('dataset-format').value);
     formData.append('description', document.getElementById('import-description').value);
     formData.append('tags', document.getElementById('import-tags').value);
+    formData.append('visibility', document.getElementById('import-visibility').value);
     formData.append('message', 'Initial import');
 
     const progressBar = document.getElementById('upload-progress-bar');

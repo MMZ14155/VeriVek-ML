@@ -20,7 +20,7 @@ class TrainingManager:
             dataset_id: Optional[int] = None,
             preprocessed_id: Optional[int] = None,
             description: str = "",
-            created_by: str = "anonymous",
+            created_by: int = 0,
             branch_id: Optional[int] = None,
             gpu_type: str = "",
             gpu_count: int = 0

@@ -7,6 +7,18 @@ class TrainingRepository:
         self.db = db_client
         self.bucket_name = "verivek-weights"
 
+    def can_access_training(self, user_id: int, training_id: int) -> bool:
+        """检查用户是否有权访问训练任务"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("SELECT can_access_training(%s, %s)", (user_id, training_id))
+            return cur.fetchone()[0]
+
+    def can_modify_training(self, user_id: int, training_id: int) -> bool:
+        """检查用户是否有权修改训练任务"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("SELECT can_modify_training(%s, %s)", (user_id, training_id))
+            return cur.fetchone()[0]
+
     def get_training_by_id(self, training_id: int) -> Optional[Dict]:
         """通过ID获取训练任务详情"""
         with self.db.db_conn.cursor() as cur:
@@ -97,7 +109,7 @@ class TrainingRepository:
             dataset_id: Optional[int] = None,
             preprocessed_id: Optional[int] = None,
             description: str = "",
-            created_by: str = "anonymous",
+            created_by: int = 0,
             branch_id: Optional[int] = None,
             gpu_type: str = "",
             gpu_count: int = 0
@@ -111,6 +123,7 @@ class TrainingRepository:
                             status, gpu_type, gpu_count
                         )
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)
+                        RETURNING training_id
                         """, (training_name, description, created_by, model_commit_id,
                               branch_id, dataset_id, preprocessed_id, json.dumps(hyperparameters),
                               gpu_type, gpu_count))
