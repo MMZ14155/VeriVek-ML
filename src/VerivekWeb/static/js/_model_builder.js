@@ -336,12 +336,16 @@ function initCanvasEvents() {
     });
 
     document.addEventListener('mouseup', () => {
-        if (isDrawingConnection && tempConnection) {
-            isDrawingConnection = false;
-            tempConnection = null;
-            drawConnections();
-        }
-        draggedNodeId = null;
+        // 延迟执行以保证 startConnection 附加的 mouseup 处理器先运行，
+        // 否则全局处理器会在专用处理器之前清除临时连接导致连线消失。
+        setTimeout(() => {
+            if (isDrawingConnection && tempConnection) {
+                isDrawingConnection = false;
+                tempConnection = null;
+                drawConnections();
+            }
+            draggedNodeId = null;
+        }, 0);
     });
 
     container.addEventListener('mousedown', (e) => {
