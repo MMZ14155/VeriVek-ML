@@ -26,7 +26,36 @@ class DbClient:
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"配置文件不存在: {filepath}")
         with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
+            cfg = json.load(f)
+
+        # 读取用户配置文件
+        user_cfg_file = cfg.get("user_config", "user_config.json")
+        user_filepath = os.path.join(self.cfg_dir, user_cfg_file)
+
+        if os.path.exists(user_filepath):
+            with open(user_filepath, "r", encoding="utf-8") as f:
+                user_cfg = json.load(f)
+
+            # 覆盖 database 配置
+            if "database" in user_cfg:
+                db_override = user_cfg["database"]
+                if "user" in db_override:
+                    cfg["database"]["user"] = db_override["user"]
+                if "password" in db_override:
+                    cfg["database"]["password"] = db_override["password"]
+
+            # 覆盖 minio 配置
+            if "minio" in user_cfg:
+                minio_override = user_cfg["minio"]
+                if "access_key" in minio_override:
+                    cfg["minio"]["access_key"] = minio_override["access_key"]
+                if "secret_key" in minio_override:
+                    cfg["minio"]["secret_key"] = minio_override["secret_key"]
+
+            if cfg.get("verbose"):
+                print(f"已加载用户配置")
+
+        return cfg
 
     def _start_db(self):
         db_cfg = self.cfg['database']

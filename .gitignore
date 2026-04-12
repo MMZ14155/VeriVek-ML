@@ -7,3 +7,5 @@
 
 minio.exe
 minio-data
+
+configs/user_config.json
