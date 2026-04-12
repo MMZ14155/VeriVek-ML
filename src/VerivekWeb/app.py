@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import mimetypes
 from flask import Flask, jsonify, request, render_template, redirect, url_for, send_file, session
 from functools import wraps
@@ -13,6 +14,7 @@ from VerivekCore.DatasetManager.dataset_manager import DatasetManager
 from VerivekCore.ModelManager.model_manager import ModelManager
 from VerivekCore.ModelManager.architecture_generator import ArchitectureGenerator
 from VerivekCore.Training.training_manager import TrainingManager
+from VerivekCore.Training.training_code_generator import TrainingCodeGenerator
 from VerivekCore.Training.gpu_monitor import get_gpu_info, get_total_usage, get_ac_status
 
 app = Flask(__name__)
@@ -24,6 +26,9 @@ model_manager = ModelManager(db_client)
 training_manager = TrainingManager(db_client)
 
 ALLOWED_EXTENSIONS = {'py'}
+
+TRAINING_SCRIPTS_DIR = "C:/VeriVek/TrainingEnv"
+os.makedirs(TRAINING_SCRIPTS_DIR, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -850,9 +855,10 @@ def save_architecture():
             'error': str(e)
         }), 400
 
+
 @app.route('/api/trainings', methods=['POST'])
 def create_training():
-    """创建新的训练任务（支持原始数据集或预处理数据集，互斥）"""
+    """创建新的训练任务并自动生成训练脚本到指定路径（类名固定为 Model）"""
     try:
         data = request.get_json()
 
@@ -868,35 +874,51 @@ def create_training():
 
         if not training_name:
             return jsonify({'success': False, 'error': '训练名称不能为空'}), 400
-
         if not model_commit_id:
             return jsonify({'success': False, 'error': '必须选择模型版本'}), 400
-
-        # 数据源互斥性校验（必须且只能选一个）
         if not dataset_id and not preprocessed_id:
-            return jsonify({'success': False, 'error': '必须选择原始数据集或预处理数据集'}), 400
+            return jsonify({'success': False, 'error': '必须选择数据集'}), 400
         if dataset_id and preprocessed_id:
             return jsonify({'success': False, 'error': '不能同时选择原始数据集和预处理数据集'}), 400
 
-        # 验证模型提交是否存在
+        # 验证模型提交
         commit_info = model_manager.repo.get_commit(model_commit_id)
         if not commit_info:
             return jsonify({'success': False, 'error': '指定的模型版本不存在'}), 404
 
-        # 验证数据源有效性
+        # 构造数据集配置
+        dataset_config = None
         if dataset_id:
             dataset = dataset_manager.get_dataset_by_id(dataset_id)
             if not dataset:
                 return jsonify({'success': False, 'error': '指定的数据集不存在'}), 404
+            num_classes = dataset.get('num_classes', 4)
+            data_root = dataset.get('storage_path',
+                                    os.path.join(TRAINING_SCRIPTS_DIR, '..', 'data', f'dataset_{dataset_id}'))
+            dataset_config = {
+                'type': 'image',
+                'data_root': data_root,
+                'num_classes': num_classes
+            }
         elif preprocessed_id:
             preprocessed = dataset_manager.repo.get_preprocessed(preprocessed_id)
             if not preprocessed:
                 return jsonify({'success': False, 'error': '指定的预处理数据集不存在'}), 404
+            parent_dataset = dataset_manager.get_dataset_by_id(preprocessed['dataset_id'])
+            num_classes = parent_dataset.get('num_classes', 4) if parent_dataset else 4
+            data_root = preprocessed.get('storage_path',
+                                         os.path.join(TRAINING_SCRIPTS_DIR, '..', 'data',
+                                                      f'preprocessed_{preprocessed_id}'))
+            dataset_config = {
+                'type': 'image',
+                'data_root': data_root,
+                'num_classes': num_classes
+            }
 
         # 从 session 获取当前用户ID
         user_id = session.get('user_id', 0)
 
-        # 创建训练（传递数据源参数）
+        # 创建训练记录
         training_id = training_manager.create_training(
             training_name=training_name,
             model_commit_id=model_commit_id,
@@ -909,6 +931,57 @@ def create_training():
             gpu_type=data.get('gpu_type', ''),
             gpu_count=data.get('gpu_count', 0)
         )
+
+        # ==================== 自动生成并保存训练脚本 ====================
+        try:
+            # 类名固定为 "Model"
+            generator = TrainingCodeGenerator(
+                model_class_name="Model",  # 固定类名
+                hyperparameters=hyperparameters,
+                dataset_config=dataset_config
+            )
+            generated_code = generator.generate()
+
+            # 保存到配置的目录
+            script_dir = os.path.join(TRAINING_SCRIPTS_DIR, str(training_id))
+            os.makedirs(script_dir, exist_ok=True)
+
+            train_script_path = os.path.join(script_dir, 'train.py')
+            with open(train_script_path, 'w', encoding='utf-8') as f:
+                f.write(generated_code)
+
+            # 同时保存模型代码
+            try:
+                commit = model_manager.repo.get_commit(model_commit_id)
+                if commit and commit.get('object_key'):
+                    model_path = os.path.join(script_dir, 'model.py')
+                    model_manager.db_client.s3_client.download_file(
+                        commit['bucket_name'],
+                        commit['object_key'],
+                        model_path
+                    )
+            except Exception as model_err:
+                print(f"[WARNING] 训练 {training_id} 的模型代码保存失败: {model_err}")
+
+            # 保存元数据
+            metadata = {
+                'training_id': training_id,
+                'training_name': training_name,
+                'model_class_name': 'Model',  # 记录使用的固定类名
+                'hyperparameters': hyperparameters,
+                'dataset_config': dataset_config,
+                'created_at': time.strftime('%Y-%m-%d %H:%M:%S')
+            }
+            metadata_path = os.path.join(script_dir, 'config.json')
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+            print(f"[INFO] 训练脚本已生成并保存至: {script_dir}")
+
+        except Exception as script_err:
+            print(f"[ERROR] 训练 {training_id} 的脚本生成失败: {script_err}")
+            import traceback
+            traceback.print_exc()
 
         # 可选：立即启动训练
         if data.get('auto_start'):
