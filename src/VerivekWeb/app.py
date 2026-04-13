@@ -488,6 +488,23 @@ def get_preprocess_lineage(preprocessed_id: int):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/preprocess/<int:preprocessed_id>/status', methods=['GET'])
+def get_preprocess_status(preprocessed_id: int):
+    """获取预处理任务执行状态"""
+    try:
+        status = dataset_manager.preprocess_executor.get_preprocess_status(preprocessed_id)
+        if not status:
+            return jsonify({'success': False, 'error': '预处理任务不存在'}), 404
+
+        return jsonify({
+            'success': True,
+            'status': status
+        })
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/models', methods=['GET'])
 def get_models():
     """获取模型列表"""

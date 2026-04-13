@@ -4,9 +4,11 @@ import time
 import shutil
 import os
 import zipfile
+from threading import Thread
 from ..Database.db_client import DbClient
 from ..Database.dataset_repository import DatasetRepository
 from .dataset_importer import DatasetImporter
+from .preprocess_executor import PreprocessExecutor
 
 class DatasetManager:
     def __init__(self, db_client: DbClient):
@@ -14,6 +16,7 @@ class DatasetManager:
         self.repo = DatasetRepository(db_client)
         self.bucket_name = "verivek-datasets"
         self.importer = DatasetImporter(self.repo, self.bucket_name)
+        self.preprocess_executor = PreprocessExecutor(db_client)
 
     # 获取数据集列表
     def list_datasets(
@@ -108,7 +111,8 @@ class DatasetManager:
             full_version = self.repo.get_version(item["version_id"])
             if full_version:
                 patches.append({
-                    "patch_id": full_version["version_id"],  # ID 映射
+                    "patch_id": full_version["version_id"],
+                    "version_id": full_version["version_id"],  # 兼容前端使用的字段
                     "version_number": idx + 1,  # P1, P2, P3...
                     "parent_patch_id": full_version["parent_version_id"],
                     "created_at": full_version["created_at"].isoformat() if hasattr(
@@ -139,7 +143,7 @@ class DatasetManager:
             created_by: int = 0
     ) -> int:
         """
-        创建预处理任务
+        创建预处理任务并异步执行
         【当前】parent_preprocessed_id 仅用于内部测试，API 层当前不传
         """
         if parent_preprocessed_id is not None:
@@ -156,6 +160,7 @@ class DatasetManager:
             if not self.repo.storage_upload(script_path, script_key):
                 raise RuntimeError("脚本上传失败")
 
+        # 初始data_key，执行完成后会更新
         data_key = f"{dataset_id}/preprocessed/{name}_{ts}.zip"
 
         preprocessed_id = self.repo.create_preprocessed(
@@ -168,6 +173,30 @@ class DatasetManager:
             preprocessing_config=config or {},
             created_by=created_by
         )
+
+        # 异步执行预处理脚本
+        def run_preprocess_async():
+            """在后台线程中执行预处理"""
+            try:
+                result = self.preprocess_executor.execute_preprocess(
+                    preprocessed_id=preprocessed_id,
+                    dataset_id=dataset_id,
+                    source_version_id=source_version_id,
+                    script_object_key=script_key,
+                    progress_callback=lambda msg, pct: print(f"[Preprocess {preprocessed_id}] {msg} ({pct}%)")
+                )
+                if result['success']:
+                    print(f"[Preprocess {preprocessed_id}] 执行成功: {result['output_path']}")
+                else:
+                    print(f"[Preprocess {preprocessed_id}] 执行失败: {result['error']}")
+            except Exception as e:
+                print(f"[Preprocess {preprocessed_id}] 执行异常: {e}")
+                import traceback
+                traceback.print_exc()
+
+        # 启动后台线程执行预处理
+        preprocess_thread = Thread(target=run_preprocess_async, daemon=True)
+        preprocess_thread.start()
 
         return preprocessed_id
 

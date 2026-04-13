@@ -677,7 +677,7 @@ async function handlePreprocessUpload(event) {
     if (progressContainer) progressContainer.classList.remove('hidden');
     if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span>处理中...</span>';
+        submitBtn.innerHTML = '<span>创建中...</span>';
     }
 
     try {
@@ -689,10 +689,13 @@ async function handlePreprocessUpload(event) {
         const result = await response.json();
 
         if (response.ok && result.success) {
-            setTimeout(() => {
-                closePreprocessUploadPanel();
-                loadDatasetGraph(currentDatasetId);
-            }, 500);
+            // 开始轮询预处理状态
+            if (progressBar) progressBar.style.width = '30%';
+            if (percentText) percentText.textContent = '30%';
+            if (submitBtn) submitBtn.innerHTML = '<span>执行预处理脚本...</span>';
+
+            // 轮询状态
+            await pollPreprocessStatus(result.preprocessed_id, progressBar, percentText, submitBtn);
         } else {
             throw new Error(result.error || '创建失败');
         }
@@ -707,6 +710,75 @@ async function handlePreprocessUpload(event) {
             submitBtn.innerHTML = `<span>创建预处理任务</span><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>`;
         }
     }
+}
+
+// 轮询预处理状态
+async function pollPreprocessStatus(preprocessedId, progressBar, percentText, submitBtn) {
+    const maxRetries = 120; // 最多轮询120次（约2分钟）
+    const interval = 1000; // 每秒轮询一次
+
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const response = await fetch(`/api/preprocess/${preprocessedId}/status`);
+            const result = await response.json();
+
+            if (!result.success) {
+                throw new Error(result.error || '获取状态失败');
+            }
+
+            const status = result.status;
+
+            // 更新进度显示
+            if (status.status === 'pending') {
+                if (progressBar) progressBar.style.width = '35%';
+                if (percentText) percentText.textContent = '35%';
+                if (submitBtn) submitBtn.innerHTML = '<span>等待执行...</span>';
+            } else if (status.status === 'running') {
+                // 简单的进度动画
+                const progress = 50 + (i % 40);
+                if (progressBar) progressBar.style.width = `${progress}%`;
+                if (percentText) percentText.textContent = `${Math.round(progress)}%`;
+                if (submitBtn) submitBtn.innerHTML = '<span>执行预处理脚本...</span>';
+            } else if (status.status === 'completed') {
+                // 完成
+                if (progressBar) progressBar.style.width = '100%';
+                if (percentText) percentText.textContent = '100%';
+                if (submitBtn) submitBtn.innerHTML = '<span class="text-emerald-400">✓ 完成</span>';
+
+                // 显示成功信息
+                alert('预处理完成！数据已保存至 TaskEnv');
+
+                setTimeout(() => {
+                    closePreprocessUploadPanel();
+                    loadDatasetGraph(currentDatasetId);
+                }, 500);
+                return;
+            } else if (status.status === 'failed') {
+                // 失败
+                if (progressBar) progressBar.style.width = '0%';
+                if (percentText) percentText.textContent = '失败';
+                if (submitBtn) submitBtn.innerHTML = '<span class="text-red-400">✗ 失败</span>';
+
+                alert('预处理失败，请检查服务器日志');
+
+                setTimeout(() => {
+                    closePreprocessUploadPanel();
+                    loadDatasetGraph(currentDatasetId);
+                }, 1000);
+                return;
+            }
+        } catch (error) {
+            console.error('轮询状态失败:', error);
+        }
+
+        // 等待下一次轮询
+        await new Promise(resolve => setTimeout(resolve, interval));
+    }
+
+    // 超时
+    alert('预处理执行超时，请稍后刷新页面查看结果');
+    closePreprocessUploadPanel();
+    loadDatasetGraph(currentDatasetId);
 }
 
 function openVersionUploadPanel() {

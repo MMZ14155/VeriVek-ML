@@ -130,13 +130,15 @@
                         </select>
                     </div>
 
-                    <!-- 数据集版本选择 -->
+                    <!-- 数据版本选择（原始版本或预处理版本）-->
                     <div>
-                        <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wider">数据集版本</label>
-                        <select name="version_id" id="dataset-version-select" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer" disabled>
+                        <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wider">数据版本</label>
+                        <select name="data_version_id" id="dataset-version-select" required class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer" disabled>
                             <option value="">先选择数据集...</option>
-                            <!-- 动态填充 -->
+                            <!-- 动态填充：包含原始版本和预处理版本 -->
                         </select>
+                        <input type="hidden" name="data_version_type" id="data-version-type" value="original">
+                        <p class="text-xs text-gray-500 mt-1" id="data-version-hint">可选择原始数据版本或预处理后版本</p>
                     </div>
 
                     <!-- 模型选择 -->
@@ -331,7 +333,15 @@ function renderTrainingList(trainings) {
                     </div>
                     <div>
                         <div class="text-xs text-gray-500 mb-0.5">数据集</div>
-                        <div class="text-gray-300 truncate">${escapeHtml(t.dataset_name || 'Unknown')}</div>
+                        <div class="text-gray-300 truncate">
+                            ${t.data_source_type === 'preprocessed' ? `
+                                <span class="inline-flex items-center space-x-1">
+                                    <span class="text-purple-400">🔧</span>
+                                    <span>${escapeHtml(t.dataset_name || 'Unknown')}</span>
+                                    ${t.parent_dataset_name ? `<span class="text-gray-500 text-xs">(${escapeHtml(t.parent_dataset_name)})</span>` : ''}
+                                </span>
+                            ` : escapeHtml(t.dataset_name || 'Unknown')}
+                        </div>
                     </div>
                     <div>
                         <div class="text-xs text-gray-500 mb-0.5">耗时</div>
@@ -488,19 +498,31 @@ document.getElementById('new-training-form').addEventListener('submit', async (e
     btn.disabled = true;
 
     const formData = new FormData(e.target);
+    // 解析数据版本选择（格式：type:id）
+    const dataVersionValue = formData.get('data_version_id') || '';
+    const [versionType, versionId] = dataVersionValue.split(':');
+
+    const datasetId = parseInt(formData.get('dataset_id'));
+
     const payload = {
         training_name: formData.get('training_name'),
         model_commit_id: parseInt(formData.get('model_commit_id')),
-        dataset_id: parseInt(formData.get('dataset_id')),
-        version_id: parseInt(formData.get('version_id')),  // 新增：数据集版本ID
         hyperparameters: {
             epochs: parseInt(formData.get('epochs')),
             batch_size: parseInt(formData.get('batch_size')),
             lr: parseFloat(formData.get('lr')),
             optimizer: formData.get('optimizer')
         }
-        // gpu_count 已移除
     };
+
+    // 根据选择的版本类型设置参数
+    if (versionType === 'preprocessed') {
+        payload.preprocessed_id = parseInt(versionId);
+        // 预处理版本不提交 dataset_id
+    } else {
+        payload.dataset_id = datasetId;
+        payload.version_id = parseInt(versionId);
+    }
 
     try {
         const response = await fetch('/api/trainings', {
@@ -595,28 +617,57 @@ function escapeHtml(text) {
 document.getElementById('status-filter').addEventListener('change', loadTrainings);
 document.getElementById('search-input').addEventListener('input', loadTrainings);
 
-// 数据集选择变化时加载版本
+// 数据集选择变化时加载版本（原始版本 + 预处理版本）
 document.getElementById('dataset-select').addEventListener('change', async (e) => {
     const datasetId = e.target.value;
     const versionSelect = document.getElementById('dataset-version-select');
-    
+    const hint = document.getElementById('data-version-hint');
+
     if (!datasetId) {
         versionSelect.innerHTML = '<option value="">先选择数据集...</option>';
         versionSelect.disabled = true;
         return;
     }
-    
+
     try {
-        const response = await fetch(`/api/datasets/${datasetId}/versions`);
-        const data = await response.json();
-        
-        if (data.success && data.versions && data.versions.length > 0) {
-            versionSelect.innerHTML = data.versions.map(v => 
-                `<option value="${v.version_id}">版本 ${v.version_number} - ${v.message || '无描述'} (${formatTime(v.created_at)})</option>`
-            ).join('');
+        // 同时获取原始版本和预处理版本
+        const [versionsResponse, preprocessResponse] = await Promise.all([
+            fetch(`/api/datasets/${datasetId}/versions`),
+            fetch(`/api/datasets/${datasetId}/preprocess`)
+        ]);
+
+        const versionsData = await versionsResponse.json();
+        const preprocessData = await preprocessResponse.json();
+
+        let options = [];
+
+        // 添加原始版本选项组
+        if (versionsData.success && versionsData.versions && versionsData.versions.length > 0) {
+            options.push('<optgroup label="📁 原始数据版本">');
+            options.push(...versionsData.versions.map(v =>
+                `<option value="original:${v.version_id}">版本 ${v.version_number} - ${v.message || '无描述'} (${formatTime(v.created_at)})</option>`
+            ));
+            options.push('</optgroup>');
+        }
+
+        // 添加预处理版本选项组
+        if (preprocessData.success && preprocessData.versions && preprocessData.versions.length > 0) {
+            const completedPreprocess = preprocessData.versions.filter(p => p.status === 'completed');
+            if (completedPreprocess.length > 0) {
+                options.push('<optgroup label="⚡ 预处理版本">');
+                options.push(...completedPreprocess.map(p =>
+                    `<option value="preprocessed:${p.preprocessed_id}">🔧 ${p.name} (${formatTime(p.created_at)})</option>`
+                ));
+                options.push('</optgroup>');
+            }
+        }
+
+        if (options.length > 0) {
+            versionSelect.innerHTML = options.join('');
             versionSelect.disabled = false;
+            if (hint) hint.textContent = '原始版本或已完成的预处理版本';
         } else {
-            versionSelect.innerHTML = '<option value="">该数据集暂无版本</option>';
+            versionSelect.innerHTML = '<option value="">该数据集暂无可用版本</option>';
             versionSelect.disabled = true;
         }
     } catch (err) {

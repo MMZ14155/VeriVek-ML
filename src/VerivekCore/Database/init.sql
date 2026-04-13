@@ -94,7 +94,9 @@ CREATE TABLE IF NOT EXISTS datasets_preprocess (
     script_object_key VARCHAR(255),
     data_object_key VARCHAR(255) NOT NULL,
     preprocessing_config JSONB DEFAULT '{}',
-    status VARCHAR(20) DEFAULT 'pending',
+    status VARCHAR(20) DEFAULT 'pending'
+        CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+
     created_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
