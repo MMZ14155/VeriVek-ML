@@ -6,7 +6,10 @@ import mimetypes
 from flask import Flask, jsonify, request, render_template, redirect, url_for, send_file, session
 from functools import wraps
 from werkzeug.utils import secure_filename
+from datetime import timedelta
 import tempfile
+
+import bcrypt
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from VerivekCore.Database.db_client import DbClient
@@ -18,7 +21,10 @@ from VerivekCore.Training.training_code_generator import TrainingCodeGenerator
 from VerivekCore.Training.gpu_monitor import get_gpu_info, get_total_usage, get_ac_status
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'verivek-dev')
+app.secret_key = os.environ.get('SECRET_KEY', 'verivek-dev-secret-key-change-in-production')
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 db_client = DbClient()
 dataset_manager = DatasetManager(db_client)
@@ -27,11 +33,19 @@ training_manager = TrainingManager(db_client)
 
 ALLOWED_EXTENSIONS = {'py'}
 
-TRAINING_SCRIPTS_DIR = "C:/VeriVek/TrainingEnv"
+TRAINING_SCRIPTS_DIR = os.path.join(os.path.expanduser('~'), 'VeriVek', 'TrainingEnv')
 os.makedirs(TRAINING_SCRIPTS_DIR, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def _hash_password(password: str) -> str:
+    """使用 bcrypt 对密码进行哈希"""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
+
+def _check_password(password: str, hashed: str) -> bool:
+    """验证密码与哈希是否匹配"""
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def login_required(f):
     @wraps(f)
@@ -143,8 +157,22 @@ def api_login():
 
         user = dict(result[0])
 
-        # 验证密码
-        if password != user['password']:
+        # 验证密码（支持明文和bcrypt哈希兼容过渡）
+        stored_pw = user['password'] or ''
+        is_valid = False
+        if stored_pw.startswith('$2'):
+            is_valid = _check_password(password, stored_pw)
+        else:
+            # 明文密码兼容（旧数据）
+            is_valid = (password == stored_pw)
+            if is_valid:
+                # 自动升级为哈希存储
+                new_hash = _hash_password(password)
+                execute_query(db_client.db_conn,
+                    "UPDATE users SET password = %s WHERE user_id = %s",
+                    (new_hash, user['user_id']))
+
+        if not is_valid:
             return jsonify({'success': False, 'error': '用户名或密码错误'}), 401
 
         # 设置 session
@@ -178,6 +206,59 @@ def api_login():
         return jsonify({'success': False, 'error': f'登录失败: {str(e)}'}), 500
 
 
+@app.route('/api/auth/register', methods=['POST'])
+def api_register():
+    """用户注册接口"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '请求体不能为空'}), 400
+
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+        role = data.get('role', 'researcher').strip()
+
+        if not username or not password:
+            return jsonify({'success': False, 'error': '用户名和密码不能为空'}), 400
+
+        if len(username) < 3 or len(username) > 50:
+            return jsonify({'success': False, 'error': '用户名长度需在3-50字符之间'}), 400
+
+        if len(password) < 6:
+            return jsonify({'success': False, 'error': '密码长度至少6位'}), 400
+
+        if role not in ('admin', 'researcher', 'guest'):
+            role = 'researcher'
+
+        # 检查用户名是否已存在
+        exists = execute_query(db_client.db_conn,
+            "SELECT 1 FROM users WHERE username = %s", (username,))
+        if exists:
+            return jsonify({'success': False, 'error': '用户名已存在'}), 409
+
+        password_hash = _hash_password(password)
+
+        query = """
+            INSERT INTO users (username, password, role)
+            VALUES (%s, %s, %s)
+            RETURNING user_id
+        """
+        result = execute_query(db_client.db_conn, query,
+                               (username, password_hash, role))
+        user_id = result[0]['user_id'] if result else None
+
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'message': '注册成功'
+        })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': f'注册失败: {str(e)}'}), 500
+
+
 @app.route('/api/auth/logout', methods=['POST'])
 def api_logout():
     try:
@@ -205,6 +286,7 @@ def api_auth_check():
     })
 
 @app.route('/api/users/count', methods=['GET'])
+@auth_required
 def api_users_count():
     try:
         query = "SELECT COUNT(*) as count FROM users"
@@ -506,6 +588,7 @@ def get_preprocess_status(preprocessed_id: int):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/models', methods=['GET'])
+@auth_required
 def get_models():
     """获取模型列表"""
     try:
@@ -527,6 +610,7 @@ def get_models():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/models/<int:model_id>', methods=['GET'])
+@auth_required
 def get_model_detail(model_id):
     """获取模型详情（包含分支统计）"""
     try:
@@ -544,6 +628,7 @@ def get_model_detail(model_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/models/<int:model_id>', methods=['DELETE'])
+@auth_required
 def delete_model(model_id):
     """删除模型"""
     try:
@@ -561,6 +646,7 @@ def delete_model(model_id):
 
 
 @app.route('/api/models/<int:model_id>/branches', methods=['POST'])
+@auth_required
 def create_model_branch(model_id):
     try:
         data = request.get_json() or {}
@@ -608,6 +694,7 @@ def create_model_branch(model_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/models/<int:model_id>/commits', methods=['GET'])
+@auth_required
 def get_model_commits(model_id):
     """获取指定分支的提交历史（用于版本图谱）"""
     try:
@@ -628,6 +715,7 @@ def get_model_commits(model_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/models/import', methods=['POST'])
+@auth_required
 def import_model():
     """导入模型"""
     try:
@@ -696,6 +784,7 @@ def import_model():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/models/<int:model_id>/branches', methods=['GET'])
+@auth_required
 def get_model_branches(model_id):
     """获取模型的所有分支 - 调用 ModelManager.get_model_detail()"""
     try:
@@ -710,6 +799,7 @@ def get_model_branches(model_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/models/<int:model_id>/history', methods=['GET'])
+@auth_required
 def get_model_history(model_id):
     """获取模型提交历史"""
     try:
@@ -725,7 +815,43 @@ def get_model_history(model_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/architecture/list', methods=['GET'])
+@auth_required
+def get_architecture_list():
+    """获取 resources/architectures 目录中的架构文件列表"""
+    try:
+        resources_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'resources', 'architectures')
+        files = [f for f in os.listdir(resources_dir) if f.endswith('_graph.json')]
+        architectures = []
+        for f in sorted(files):
+            name = f.replace('_graph.json', '')
+            architectures.append({
+                'name': name,
+                'display_name': name.upper(),
+                'file': f
+            })
+        return jsonify({'success': True, 'architectures': architectures})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/architecture/load/<name>', methods=['GET'])
+@auth_required
+def get_architecture(name):
+    """读取指定的架构 JSON 文件"""
+    try:
+        resources_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'resources', 'architectures')
+        filename = f"{name}_graph.json"
+        filepath = os.path.join(resources_dir, filename)
+        if not os.path.exists(filepath):
+            return jsonify({'success': False, 'error': '架构不存在'}), 404
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return jsonify({'success': True, 'graph': data})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/architecture/generate', methods=['POST'])
+@auth_required
 def generate_architecture():
     try:
         data = request.get_json()
@@ -749,6 +875,7 @@ def generate_architecture():
         }), 400
 
 @app.route('/api/architecture/params', methods=['POST'])
+@auth_required
 def calculate_architecture_params():
     """计算架构的参数量"""
     try:
@@ -874,6 +1001,7 @@ def save_architecture():
 
 
 @app.route('/api/trainings', methods=['POST'])
+@auth_required
 def create_training():
     """创建新的训练任务并自动生成训练脚本到指定路径（类名固定为 Model）"""
     try:
@@ -1070,6 +1198,7 @@ def create_training():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/trainings', methods=['GET'])
+@auth_required
 def get_trainings():
     """获取训练任务列表，支持状态筛选，包含数据源信息"""
     try:
@@ -1136,6 +1265,7 @@ def get_trainings():
 
 
 @app.route('/api/trainings/<int:training_id>', methods=['GET'])
+@auth_required
 def get_training_detail(training_id):
     """获取训练任务详情（含权重信息、数据源详情）"""
     try:
@@ -1201,6 +1331,7 @@ def get_training_detail(training_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/trainings/<int:training_id>/start', methods=['POST'])
+@auth_required
 def start_training_task(training_id):
     """手动启动训练任务（将状态从 pending 改为 running）"""
     try:
@@ -1217,6 +1348,7 @@ def start_training_task(training_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/trainings/<int:training_id>/complete', methods=['POST'])
+@auth_required
 def complete_training_task(training_id):
     """标记训练完成（供训练脚本回调使用）"""
     try:
@@ -1237,6 +1369,7 @@ def complete_training_task(training_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/trainings/<int:training_id>/fail', methods=['POST'])
+@auth_required
 def fail_training_task(training_id):
     """标记训练失败（供训练脚本回调使用）"""
     try:
@@ -1257,6 +1390,7 @@ def fail_training_task(training_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/trainings/<int:training_id>/checkpoint', methods=['POST'])
+@auth_required
 def save_training_checkpoint(training_id):
     """保存训练检查点（供训练脚本调用）"""
     try:
@@ -1304,6 +1438,7 @@ def save_training_checkpoint(training_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/trainings/<int:training_id>/resume', methods=['GET'])
+@auth_required
 def get_training_resume_info(training_id):
     """获取训练恢复信息（断点续训）"""
     try:
@@ -1325,6 +1460,7 @@ def get_training_resume_info(training_id):
 
 # 权重下载
 @app.route('/api/weights/<int:weight_id>/download', methods=['GET'])
+@auth_required
 def download_weight(weight_id):
     try:
         # 获取权重信息
@@ -1359,6 +1495,7 @@ def download_weight(weight_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/gpu', methods=['GET'])
+@auth_required
 def get_gpu_status():
     try:
         used_mem, total_mem = get_total_usage()
@@ -1381,6 +1518,7 @@ def get_gpu_status():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/power', methods=['GET'])
+@auth_required
 def get_power_status():
     try:
         ac_connected = get_ac_status()
@@ -1403,6 +1541,56 @@ def get_power_status():
             'success': False,
             'error': str(e)
         }), 500
+
+
+@app.route('/api/trainings/<int:training_id>/logs', methods=['GET'])
+@auth_required
+def get_training_logs(training_id):
+    """获取训练实时日志"""
+    try:
+        tail = request.args.get('tail', 200, type=int)
+        logs = training_manager.get_training_logs(training_id, tail=tail)
+        return jsonify({
+            'success': True,
+            'training_id': training_id,
+            'logs': logs,
+            'is_running': training_id in training_manager._processes
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/trainings/<int:training_id>/metrics', methods=['GET'])
+@auth_required
+def get_training_metrics_history(training_id):
+    """获取训练指标历史"""
+    try:
+        tail = request.args.get('tail', 100, type=int)
+        metrics = training_manager.get_training_metrics(training_id, tail=tail)
+        return jsonify({
+            'success': True,
+            'training_id': training_id,
+            'metrics': metrics
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/trainings/<int:training_id>/stop', methods=['POST'])
+@auth_required
+def stop_training_task(training_id):
+    """强制停止训练进程"""
+    try:
+        training_manager.stop_training(training_id)
+        return jsonify({
+            'success': True,
+            'message': '训练任务已停止'
+        })
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True)

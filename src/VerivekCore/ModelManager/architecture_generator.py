@@ -7,18 +7,27 @@ class ArchitectureGenerator:
     DEFAULT_PARAMS = {
         'Conv2d': {'kernel_size': 3, 'stride': 1, 'padding': 0, 'bias': True},
         'MaxPool2d': {'kernel_size': 2, 'stride': 2, 'padding': 0},
+        'AvgPool2d': {'kernel_size': 2, 'stride': 2, 'padding': 0},
         'Linear': {'bias': True},
         'Dropout': {'p': 0.5, 'inplace': False},
         'ReLU': {'inplace': False},
+        'LeakyReLU': {'negative_slope': 0.01, 'inplace': False},
+        'GELU': {},
         'BatchNorm2d': {'eps': 1e-05, 'momentum': 0.1},
+        'LayerNorm': {'eps': 1e-05, 'elementwise_affine': True},
         'Softmax': {'dim': 1},
         'Flatten': {'start_dim': 1, 'end_dim': -1},
         'View': {'shape': [-1, 512]},
         'AdaptiveAvgPool2d': {'output_size': (1, 1)},
+        'Embedding': {'padding_idx': None, 'max_norm': None, 'norm_type': 2.0},
+        'LSTM': {'hidden_size': 128, 'num_layers': 1, 'bias': True, 'batch_first': True, 'dropout': 0, 'bidirectional': False},
+        'GRU': {'hidden_size': 128, 'num_layers': 1, 'bias': True, 'batch_first': True, 'dropout': 0, 'bidirectional': False},
+        'Add': {},
+        'Concat': {'dim': 1},
     }
 
     # 需要特殊处理的层（在forward中直接操作，不需要nn.Module定义）
-    FUNCTIONAL_LAYERS = {'Flatten', 'View', 'ReLU', 'Sigmoid', 'Tanh', 'Softmax', 'Dropout'}
+    FUNCTIONAL_LAYERS = {'Flatten', 'View', 'ReLU', 'Sigmoid', 'Tanh', 'Softmax', 'Dropout', 'Add', 'Concat', 'GELU', 'LeakyReLU'}
 
     def __init__(
             self,
@@ -87,9 +96,10 @@ class ArchitectureGenerator:
 
         return result
 
-    def _propagate_shape(self, node: Dict, input_shape: List[int]) -> Tuple[List[int], Dict[str, Any]]:
+    def _propagate_shape(self, node: Dict, input_shapes: List[List[int]]) -> Tuple[List[int], Dict[str, Any]]:
         """
         根据输入形状计算当前节点的输出形状，并推断缺失参数
+        支持多输入节点（如 Add、Concat）
 
         返回: (output_shape, inferred_params)
             output_shape: 当前节点的输出形状 [batch, ...]
@@ -99,10 +109,43 @@ class ArchitectureGenerator:
         props = node.get('properties', {})
         inferred = {}
 
+        # 对单输入节点，保持向后兼容
+        input_shape = input_shapes[0] if input_shapes else self.input_shape.copy()
+
         if node_type == 'Input':
             # 使用初始化时传入的尺寸
             output_shape = self.input_shape.copy()
             return output_shape, inferred
+
+        elif node_type == 'Add':
+            if not input_shapes:
+                raise ValueError("Add 节点需要至少一个输入")
+            base_shape = list(input_shapes[0])
+            for idx, shape in enumerate(input_shapes[1:], start=2):
+                if len(shape) != len(base_shape):
+                    raise ValueError(f"Add 节点输入形状维度不匹配: {base_shape} vs {shape} (输入{idx})")
+                for i in range(1, len(base_shape)):
+                    if shape[i] != base_shape[i]:
+                        raise ValueError(f"Add 节点输入形状不匹配（除batch外）: {base_shape} vs {shape} (输入{idx}, 维度{i})")
+            output_shape = base_shape
+
+        elif node_type == 'Concat':
+            if not input_shapes:
+                raise ValueError("Concat 节点需要至少一个输入")
+            dim = props.get('dim', 1)
+            base_shape = list(input_shapes[0])
+            ndim = len(base_shape)
+            if dim < 0:
+                dim = ndim + dim
+            for idx, shape in enumerate(input_shapes[1:], start=2):
+                if len(shape) != ndim:
+                    raise ValueError(f"Concat 节点输入形状维度不匹配 (输入{idx})")
+                for i in range(ndim):
+                    if i != dim and shape[i] != base_shape[i]:
+                        raise ValueError(f"Concat 节点输入形状在非拼接维度不匹配: dim {i}, {base_shape} vs {shape} (输入{idx})")
+            concat_size = sum(s[dim] for s in input_shapes)
+            base_shape[dim] = concat_size
+            output_shape = base_shape
 
         elif node_type == 'Conv2d':
             # 自动推断 in_channels（输入形状的通道维度）
@@ -208,9 +251,48 @@ class ArchitectureGenerator:
             out_features = props.get('out_features', 10)
             output_shape = [input_shape[0], out_features]
 
-        elif node_type in ['ReLU', 'Sigmoid', 'Tanh', 'Dropout']:
+        elif node_type in ['ReLU', 'Sigmoid', 'Tanh', 'Dropout', 'GELU', 'LeakyReLU']:
             # 形状不变
             output_shape = input_shape.copy()
+
+        elif node_type == 'LayerNorm':
+            normalized_shape = props.get('normalized_shape', input_shape[1:])
+            if isinstance(normalized_shape, int):
+                normalized_shape = [normalized_shape]
+            inferred['normalized_shape'] = tuple(normalized_shape)
+            output_shape = input_shape.copy()
+
+        elif node_type == 'Embedding':
+            num_embeddings = props.get('num_embeddings', 1000)
+            embedding_dim = props.get('embedding_dim', 128)
+            # 输入: [batch, seq_len], 输出: [batch, seq_len, embedding_dim]
+            if len(input_shape) == 1:
+                output_shape = [input_shape[0], embedding_dim]
+            elif len(input_shape) == 2:
+                output_shape = [input_shape[0], input_shape[1], embedding_dim]
+            else:
+                output_shape = input_shape.copy() + [embedding_dim]
+            inferred['num_embeddings'] = num_embeddings
+            inferred['embedding_dim'] = embedding_dim
+
+        elif node_type == 'LSTM':
+            hidden_size = props.get('hidden_size', 128)
+            bidirectional = props.get('bidirectional', False)
+            # 输入: [batch, seq_len, features], 输出: [batch, seq_len, hidden*dirs]
+            if len(input_shape) >= 3:
+                out_features = hidden_size * (2 if bidirectional else 1)
+                output_shape = [input_shape[0], input_shape[1], out_features]
+            else:
+                output_shape = [input_shape[0], hidden_size * (2 if bidirectional else 1)]
+
+        elif node_type == 'GRU':
+            hidden_size = props.get('hidden_size', 128)
+            bidirectional = props.get('bidirectional', False)
+            if len(input_shape) >= 3:
+                out_features = hidden_size * (2 if bidirectional else 1)
+                output_shape = [input_shape[0], input_shape[1], out_features]
+            else:
+                output_shape = [input_shape[0], hidden_size * (2 if bidirectional else 1)]
 
         elif node_type == 'Output':
             output_shape = input_shape.copy()
@@ -221,15 +303,24 @@ class ArchitectureGenerator:
 
         return output_shape, inferred
 
-    def get_input_node(self, node_id: int) -> Optional[Tuple[int, str]]:
+    def get_input_nodes(self, node_id: int) -> List[Tuple[int, str]]:
         """
-        获取指定节点的输入来源
-        返回: (source_node_id, source_var_name) 或 None
+        获取指定节点的所有输入来源（按连接顺序）
+        返回: [(source_node_id, source_var_name), ...]
         """
+        sources = []
         for conn in self.connections:
             if conn['to']['nodeId'] == node_id:
-                return conn['from']['nodeId'], f"x_{conn['from']['nodeId']}"
-        return None
+                sources.append((conn['from']['nodeId'], f"x_{conn['from']['nodeId']}"))
+        return sources
+
+    def get_input_node(self, node_id: int) -> Optional[Tuple[int, str]]:
+        """
+        获取指定节点的第一个输入来源（向后兼容）
+        返回: (source_node_id, source_var_name) 或 None
+        """
+        sources = self.get_input_nodes(node_id)
+        return sources[0] if sources else None
 
     def generate_layer_name(self, node: Dict) -> Optional[str]:
         """生成层的变量名"""
@@ -393,28 +484,40 @@ class ArchitectureGenerator:
         
         return var_reuse_map
 
-    def generate_forward_line_optimized(self, node: Dict, input_var: str, 
+    def generate_forward_line_optimized(self, node: Dict, input_vars: List[str],
                                         output_var: str, reuse_input: bool = False) -> str:
         """
-        生成优化后的forward代码行，支持变量名复用
-        
+        生成优化后的forward代码行，支持变量名复用与多输入
+
         Args:
             node: 当前节点
-            input_var: 输入变量名
-            output_var: 输出变量名（可能与input_var相同表示复用）
-            reuse_input: 是否复用输入变量名
+            input_vars: 输入变量名列表
+            output_var: 输出变量名
+            reuse_input: 是否复用输入变量名（仅对单输入有效）
         """
         node_type = node['type']
         node_id = node['id']
-        
-        # 如果复用输入变量，赋值目标是input_var
-        target_var = input_var if reuse_input else output_var
-        
+        input_var = input_vars[0] if input_vars else 'x'
+
+        # 如果复用输入变量且只有一个输入，赋值目标是input_var
+        target_var = input_var if (reuse_input and len(input_vars) == 1) else output_var
+
         if node_type == 'Input':
             return f"        # Input: {self.input_shape}"
 
         elif node_type == 'Output':
             return f"        return {input_var}"
+
+        elif node_type == 'Add':
+            if len(input_vars) == 1:
+                return f"        {target_var} = {input_var}"
+            expr = " + ".join(input_vars)
+            return f"        {target_var} = {expr}"
+
+        elif node_type == 'Concat':
+            dim = node.get('properties', {}).get('dim', 1)
+            vars_str = ", ".join(input_vars)
+            return f"        {target_var} = torch.cat([{vars_str}], dim={dim})"
 
         elif node_type == 'Flatten':
             shape = self.node_shapes.get(node_id, [0, -1])
@@ -430,6 +533,13 @@ class ArchitectureGenerator:
 
         elif node_type in ['ReLU', 'Sigmoid', 'Tanh']:
             return f"        {target_var} = F.{node_type.lower()}({input_var})"
+
+        elif node_type == 'LeakyReLU':
+            negative_slope = node.get('properties', {}).get('negative_slope', 0.01)
+            return f"        {target_var} = F.leaky_relu({input_var}, negative_slope={negative_slope})"
+
+        elif node_type == 'GELU':
+            return f"        {target_var} = F.gelu({input_var})"
 
         elif node_type == 'Softmax':
             dim = node.get('properties', {}).get('dim', 1)
@@ -455,15 +565,20 @@ class ArchitectureGenerator:
         sorted_nodes = self.topological_sort()
 
         # 2. 形状传播和参数推断
-        current_shape = self.input_shape.copy()
         layer_defs = []
 
         for node in sorted_nodes:
             node_id = node['id']
             node_type = node['type']
 
+            # 收集所有输入形状（支持多输入节点）
+            input_nodes = self.get_input_nodes(node_id)
+            input_shapes = [self.node_shapes.get(src_id, self.input_shape) for src_id, _ in input_nodes]
+            if not input_shapes:
+                input_shapes = [self.input_shape.copy()]
+
             # 传播形状
-            output_shape, inferred = self._propagate_shape(node, current_shape)
+            output_shape, inferred = self._propagate_shape(node, input_shapes)
             self.node_shapes[node_id] = output_shape
 
             # 存储推断的参数到节点
@@ -474,8 +589,6 @@ class ArchitectureGenerator:
             layer_def = self.generate_layer_def(node)
             if layer_def:
                 layer_defs.append((node_id, layer_def, node_type))
-
-            current_shape = output_shape
 
         # 3. 分析变量复用机会
         var_reuse_map = self._analyze_variable_reuse(sorted_nodes) if optimize_vars else {}
@@ -494,27 +607,27 @@ class ArchitectureGenerator:
                 forward_lines.append(f"        # Input shape: {shape}")
                 continue
 
-            # 找到输入变量
-            input_node_info = self.get_input_node(node_id)
-            input_var = var_map.get(input_node_info[0], 'x') if input_node_info else 'x'
-            
-            # 确定输出变量名
-            if node_id in var_reuse_map:
-                # 复用输入变量名
+            # 找到输入变量（支持多输入）
+            input_nodes = self.get_input_nodes(node_id)
+            input_vars = [var_map.get(src_id, 'x') for src_id, _ in input_nodes]
+            if not input_vars:
+                input_vars = ['x']
+
+            # 确定输出变量名（多输入节点不复用变量名）
+            if node_id in var_reuse_map and len(input_vars) == 1:
                 output_var = var_reuse_map[node_id]
                 reuse_input = True
             else:
-                # 创建新变量名
                 output_var = f"x_{node_id}"
                 reuse_input = False
-            
+
             var_map[node_id] = output_var
 
             # 生成代码行
-            line = self.generate_forward_line_optimized(node, input_var, output_var, reuse_input)
+            line = self.generate_forward_line_optimized(node, input_vars, output_var, reuse_input)
 
             # 添加形状注释（对关键层）
-            if node_type in ['Conv2d', 'Linear', 'MaxPool2d', 'Flatten', 'View']:
+            if node_type in ['Conv2d', 'Linear', 'MaxPool2d', 'Flatten', 'View', 'Add', 'Concat']:
                 line += f"  # shape: {shape}"
 
             forward_lines.append(line)
@@ -583,11 +696,14 @@ class ArchitectureGenerator:
         # 运行形状传播以检查问题
         try:
             sorted_nodes = self.topological_sort()
-            current_shape = self.input_shape.copy()
             for node in sorted_nodes:
-                output_shape, _ = self._propagate_shape(node, current_shape)
+                node_id = node['id']
+                input_nodes = self.get_input_nodes(node_id)
+                input_shapes = [stats['output_shapes'].get(src_id, self.input_shape) for src_id, _ in input_nodes]
+                if not input_shapes:
+                    input_shapes = [self.input_shape.copy()]
+                output_shape, _ = self._propagate_shape(node, input_shapes)
                 stats['output_shapes'][node['id']] = output_shape
-                current_shape = output_shape
         except Exception as e:
             stats['warnings'].append(f"形状传播错误: {str(e)}")
 
@@ -616,15 +732,17 @@ class ArchitectureGenerator:
                 'trainable_params': 0
             }
 
-        # 确保形状传播已执行
-        current_shape = self.input_shape.copy()
+        # 确保形状传播已执行（支持多输入）
         for node in sorted_nodes:
             node_id = node['id']
-            output_shape, inferred = self._propagate_shape(node, current_shape)
+            input_nodes = self.get_input_nodes(node_id)
+            input_shapes = [self.node_shapes.get(src_id, self.input_shape) for src_id, _ in input_nodes]
+            if not input_shapes:
+                input_shapes = [self.input_shape.copy()]
+            output_shape, inferred = self._propagate_shape(node, input_shapes)
             self.node_shapes[node_id] = output_shape
             if inferred:
                 node['inferred_properties'] = inferred
-            current_shape = output_shape
 
         total_params = 0
         trainable_params = 0
@@ -692,10 +810,72 @@ class ArchitectureGenerator:
                 params = 0
                 param_details = {'p': p, 'note': 'No trainable parameters'}
 
-            elif node_type in ['ReLU', 'Sigmoid', 'Tanh', 'Softmax', 'Flatten', 'View',
-                               'MaxPool2d', 'AvgPool2d', 'AdaptiveAvgPool2d', 'Input', 'Output']:
+            elif node_type in ['ReLU', 'Sigmoid', 'Tanh', 'Softmax', 'GELU', 'LeakyReLU',
+                               'Flatten', 'View', 'MaxPool2d', 'AvgPool2d', 'AdaptiveAvgPool2d',
+                               'Input', 'Output', 'Add', 'Concat']:
                 params = 0
                 param_details = {'note': 'No trainable parameters'}
+
+            elif node_type == 'LayerNorm':
+                normalized_shape = inferred.get('normalized_shape', props.get('normalized_shape', []))
+                if isinstance(normalized_shape, (list, tuple)):
+                    num_features = 1
+                    for dim in normalized_shape:
+                        num_features *= dim
+                else:
+                    num_features = normalized_shape
+                elementwise_affine = props.get('elementwise_affine', True)
+                params = 2 * num_features if elementwise_affine else 0
+                param_details = {
+                    'normalized_shape': normalized_shape,
+                    'calculation': f'2×{num_features} (weight + bias)' if elementwise_affine else '0 (no affine)'
+                }
+
+            elif node_type == 'Embedding':
+                num_embeddings = props.get('num_embeddings', 1000)
+                embedding_dim = props.get('embedding_dim', 128)
+                params = num_embeddings * embedding_dim
+                param_details = {
+                    'num_embeddings': num_embeddings,
+                    'embedding_dim': embedding_dim,
+                    'calculation': f'{num_embeddings}×{embedding_dim}'
+                }
+
+            elif node_type == 'LSTM':
+                input_size = input_shape[-1] if input_shape else 128
+                hidden_size = props.get('hidden_size', 128)
+                num_layers = props.get('num_layers', 1)
+                bidirectional = props.get('bidirectional', False)
+                num_dirs = 2 if bidirectional else 1
+                # 4 gates (i, f, g, o) each with input-to-hidden and hidden-to-hidden weights + bias
+                # weights: 4 * (input_size * hidden_size + hidden_size * hidden_size)
+                # bias: 4 * hidden_size (bias_ih + bias_hh)
+                params_per_layer = 4 * (input_size * hidden_size + hidden_size * hidden_size + 2 * hidden_size)
+                params = num_layers * num_dirs * params_per_layer
+                param_details = {
+                    'input_size': input_size,
+                    'hidden_size': hidden_size,
+                    'num_layers': num_layers,
+                    'bidirectional': bidirectional,
+                    'calculation': f'{num_layers}×{num_dirs}×4×({input_size}×{hidden_size}+{hidden_size}×{hidden_size}+2×{hidden_size})'
+                }
+
+            elif node_type == 'GRU':
+                input_size = input_shape[-1] if input_shape else 128
+                hidden_size = props.get('hidden_size', 128)
+                num_layers = props.get('num_layers', 1)
+                bidirectional = props.get('bidirectional', False)
+                num_dirs = 2 if bidirectional else 1
+                # 3 gates (r, z, n) each with input-to-hidden and hidden-to-hidden weights + bias
+                params_per_layer = 3 * (input_size * hidden_size + hidden_size * hidden_size + 2 * hidden_size)
+                params = num_layers * num_dirs * params_per_layer
+                param_details = {
+                    'input_size': input_size,
+                    'hidden_size': hidden_size,
+                    'num_layers': num_layers,
+                    'bidirectional': bidirectional,
+                    'calculation': f'{num_layers}×{num_dirs}×3×({input_size}×{hidden_size}+{hidden_size}×{hidden_size}+2×{hidden_size})'
+                }
 
             else:
                 # 未知层类型，尝试从属性中查找可能的参数

@@ -150,6 +150,23 @@
         </div>
         
         <div class="flex items-center space-x-3">
+            <!-- 架构下拉菜单 -->
+            <div class="relative" id="arch-dropdown">
+                <button onclick="toggleArchDropdown()" class="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm transition-colors flex items-center space-x-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                    </svg>
+                    <span>架构</span>
+                    <svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div id="arch-menu" class="hidden absolute right-0 mt-2 w-48 glass-panel rounded-xl border border-white/10 bg-[#13131f]/95 shadow-xl z-50 py-1">
+                    <div id="arch-list" class="max-h-64 overflow-y-auto">
+                        <div class="px-4 py-2 text-xs text-gray-500">加载中...</div>
+                    </div>
+                </div>
+            </div>
             <button onclick="clearCanvas()" class="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm transition-colors">
                 清空画布
             </button>
@@ -206,6 +223,21 @@
                         <div>
                             <div class="text-sm font-medium">MaxPool2d</div>
                             <div class="text-xs text-gray-500">最大池化</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5" 
+                     draggable="true" data-type="AvgPool2d">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <circle cx="12" cy="12" r="9" stroke-width="2"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium">AvgPool2d</div>
+                            <div class="text-xs text-gray-500">平均池化</div>
                         </div>
                     </div>
                 </div>
@@ -304,7 +336,7 @@
                     </div>
                 </div>
                 
-                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5" 
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5"
                      draggable="true" data-type="Softmax">
                     <div class="flex items-center space-x-3">
                         <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
@@ -316,12 +348,38 @@
                         </div>
                     </div>
                 </div>
-                
+
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5"
+                     draggable="true" data-type="GELU">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                            <span class="text-emerald-400 text-xs font-bold">G</span>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium">GELU</div>
+                            <div class="text-xs text-gray-500">高斯误差线性单元</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5"
+                     draggable="true" data-type="LeakyReLU">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                            <span class="text-emerald-400 text-xs font-bold">Lr</span>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium">LeakyReLU</div>
+                            <div class="text-xs text-gray-500">泄漏整流线性单元</div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="h-px bg-white/10 my-2"></div>
                 
                 <!-- 归一化 -->
                 <div class="text-xs text-gray-500 font-medium mb-2">归一化</div>
-                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5" 
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5"
                      draggable="true" data-type="BatchNorm2d">
                     <div class="flex items-center space-x-3">
                         <div class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
@@ -335,10 +393,25 @@
                         </div>
                     </div>
                 </div>
-                
+
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5"
+                     draggable="true" data-type="LayerNorm">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium">LayerNorm</div>
+                            <div class="text-xs text-gray-500">层归一化</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 形状变换 -->
                 <div class="text-xs text-gray-500 font-medium mb-2 mt-3">形状变换</div>
-                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5" 
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5"
                      draggable="true" data-type="Flatten">
                     <div class="flex items-center space-x-3">
                         <div class="w-8 h-8 rounded-lg bg-rose-500/20 flex items-center justify-center">
@@ -367,10 +440,85 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- 运算 -->
+                <div class="text-xs text-gray-500 font-medium mb-2 mt-3">运算</div>
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5" 
+                     draggable="true" data-type="Add">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium">Add</div>
+                            <div class="text-xs text-gray-500">元素相加</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5" 
+                     draggable="true" data-type="Concat">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium">Concat</div>
+                            <div class="text-xs text-gray-500">通道拼接</div>
+                        </div>
+                    </div>
+                </div>
                 
+                <!-- 序列模型 -->
+                <div class="text-xs text-gray-500 font-medium mb-2 mt-3">序列模型</div>
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5"
+                     draggable="true" data-type="Embedding">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium">Embedding</div>
+                            <div class="text-xs text-gray-500">词嵌入</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5"
+                     draggable="true" data-type="LSTM">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center">
+                            <span class="text-pink-400 text-xs font-bold">Ls</span>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium">LSTM</div>
+                            <div class="text-xs text-gray-500">长短期记忆</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5"
+                     draggable="true" data-type="GRU">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center">
+                            <span class="text-pink-400 text-xs font-bold">Gr</span>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium">GRU</div>
+                            <div class="text-xs text-gray-500">门控循环单元</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 输入输出 -->
                 <div class="text-xs text-gray-500 font-medium mb-2 mt-3">输入输出</div>
-                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5" 
+                <div class="component-item p-3 rounded-xl border border-white/10 bg-white/5"
                      draggable="true" data-type="Input">
                     <div class="flex items-center space-x-3">
                         <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center">
@@ -405,7 +553,7 @@
         <!-- 中间画布 -->
         <div class="flex-1 glass-panel rounded-2xl relative overflow-hidden flex flex-col">
             <!-- 画布工具栏 -->
-            <div class="h-12 border-b border-white/5 flex items-center px-4 space-x-2">
+            <div class="canvas-toolbar h-12 border-b border-white/5 flex items-center px-4 space-x-2 bg-[#13131f]/80 z-30 relative">
                 <span class="text-xs text-gray-500">画布操作:</span>
                 <button onclick="autoLayout()" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs transition-colors">
                     自动布局

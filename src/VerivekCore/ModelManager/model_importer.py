@@ -1,3 +1,5 @@
+import ast
+import importlib.util
 import os
 import time
 import zipfile
@@ -10,9 +12,70 @@ class ModelImporter:
         self.repo = ModelRepository(db_client)
         self.bucket_name = "verivek-models"
 
+    @staticmethod
+    def validate_model_file(model_path: str) -> dict:
+        """
+        校验模型文件的语法和可导入性
+        返回: {'valid': bool, 'class_name': str, 'error': str, 'warnings': list}
+        """
+        result = {'valid': False, 'class_name': None, 'error': None, 'warnings': []}
+
+        # 1. 语法校验 (AST解析)
+        try:
+            with open(model_path, 'r', encoding='utf-8') as f:
+                source = f.read()
+            tree = ast.parse(source)
+        except SyntaxError as e:
+            result['error'] = f"语法错误 (第{e.lineno}行): {e.msg}"
+            return result
+        except Exception as e:
+            result['error'] = f"文件读取失败: {str(e)}"
+            return result
+
+        # 2. 检查是否包含 nn.Module 子类
+        module_classes = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for base in node.bases:
+                    base_name = None
+                    if isinstance(base, ast.Name):
+                        base_name = base.id
+                    elif isinstance(base, ast.Attribute):
+                        base_name = base.attr
+                    if base_name in ('Module', 'nn.Module'):
+                        module_classes.append(node.name)
+
+        if not module_classes:
+            result['error'] = "未找到继承自 nn.Module 的类定义"
+            return result
+
+        result['class_name'] = module_classes[0]
+        if len(module_classes) > 1:
+            result['warnings'].append(f"发现多个 nn.Module 子类，将使用第一个: {module_classes[0]}")
+
+        # 3. 尝试动态导入并实例化
+        try:
+            spec = importlib.util.spec_from_file_location("verivek_model_temp", model_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            model_class = getattr(module, result['class_name'])
+            instance = model_class()
+            # 检查 forward 方法是否存在
+            if not hasattr(instance, 'forward'):
+                result['warnings'].append("模型类缺少 forward 方法")
+        except Exception as e:
+            result['error'] = f"动态导入失败: {str(e)}"
+            return result
+
+        result['valid'] = True
+        return result
+
     def import_model(self, model_name: str, branch_name: str, model_path: str,
                      message: str = "", author: int = 0, tags: str = "",
                      description: str = "", visibility: str = "private") -> int:
+
+        validation = self.validate_model_file(model_path)
+
         try:
             model = self.repo.get_model_by_name(model_name)
             if model:

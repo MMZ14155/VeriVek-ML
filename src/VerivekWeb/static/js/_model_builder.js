@@ -14,10 +14,18 @@ let canvasOffset = { x: 0, y: 0 };
 let nodeIdCounter = 0;
 let connectionIdCounter = 0;
 
+let isPanning = false;
+let panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
+let dragBounds = null;
+const CANVAS_PADDING = 200;
+const NODE_WIDTH = 180;
+const NODE_HEIGHT = 80;
+
 // 组件默认配置（仅用于前端初始化，后端有完整配置）
 const COMPONENT_DEFAULTS = {
     'Conv2d': { in_channels: 3, out_channels: 64, kernel_size: 3, stride: 1, padding: 0, inputs: ['in'], outputs: ['out'] },
     'MaxPool2d': { kernel_size: 2, stride: 2, padding: 0, inputs: ['in'], outputs: ['out'] },
+    'AvgPool2d': { kernel_size: 2, stride: 2, padding: 0, inputs: ['in'], outputs: ['out'] },
     'AdaptiveAvgPool2d': { output_size: [1, 1], inputs: ['in'], outputs: ['out'] },
     'Linear': { in_features: 512, out_features: 10, bias: true, inputs: ['in'], outputs: ['out'] },
     'Dropout': { p: 0.5, inputs: ['in'], outputs: ['out'] },
@@ -25,18 +33,30 @@ const COMPONENT_DEFAULTS = {
     'Sigmoid': { inputs: ['in'], outputs: ['out'] },
     'Tanh': { inputs: ['in'], outputs: ['out'] },
     'Softmax': { dim: 1, inputs: ['in'], outputs: ['out'] },
+    'GELU': { inputs: ['in'], outputs: ['out'] },
+    'LeakyReLU': { negative_slope: 0.01, inplace: false, inputs: ['in'], outputs: ['out'] },
     'BatchNorm2d': { num_features: 64, eps: 1e-05, momentum: 0.1, inputs: ['in'], outputs: ['out'] },
+    'LayerNorm': { normalized_shape: [64], eps: 1e-05, elementwise_affine: true, inputs: ['in'], outputs: ['out'] },
     'Flatten': { start_dim: 1, end_dim: -1, inputs: ['in'], outputs: ['out'] },
     'View': { shape: [-1, 512], inputs: ['in'], outputs: ['out'] },
+    'Embedding': { num_embeddings: 1000, embedding_dim: 128, inputs: ['in'], outputs: ['out'] },
+    'LSTM': { hidden_size: 128, num_layers: 1, bias: true, batch_first: true, dropout: 0, bidirectional: false, inputs: ['in'], outputs: ['out'] },
+    'GRU': { hidden_size: 128, num_layers: 1, bias: true, batch_first: true, dropout: 0, bidirectional: false, inputs: ['in'], outputs: ['out'] },
+    'Add': { inputs: ['in1', 'in2'], outputs: ['out'] },
+    'Concat': { dim: 1, inputs: ['in1', 'in2'], outputs: ['out'] },
     'Input': { shape: [1, 3, 224, 224], inputs: [], outputs: ['out'] },
     'Output': { name: 'output', inputs: ['in'], outputs: [] }
 };
 
 const COMPONENT_NAMES = {
-    'Conv2d': '二维卷积', 'MaxPool2d': '最大池化', 'AdaptiveAvgPool2d': '自适应平均池化',
+    'Conv2d': '二维卷积', 'MaxPool2d': '最大池化', 'AvgPool2d': '平均池化', 'AdaptiveAvgPool2d': '自适应平均池化',
     'Linear': '全连接层', 'Dropout': '随机失活', 'ReLU': 'ReLU激活',
     'Sigmoid': 'Sigmoid激活', 'Tanh': 'Tanh激活', 'Softmax': 'Softmax归一化',
-    'BatchNorm2d': '批归一化', 'Flatten': '展平层', 'View': '维度变换',
+    'GELU': 'GELU激活', 'LeakyReLU': 'LeakyReLU激活',
+    'BatchNorm2d': '批归一化', 'LayerNorm': '层归一化',
+    'Flatten': '展平层', 'View': '维度变换',
+    'Embedding': '词嵌入', 'LSTM': 'LSTM', 'GRU': 'GRU',
+    'Add': '相加', 'Concat': '拼接',
     'Input': '输入层', 'Output': '输出层'
 };
 
@@ -46,6 +66,15 @@ document.addEventListener('DOMContentLoaded', () => {
     initCanvasEvents();
     initKeyboardShortcuts();
     updateStats();
+    loadArchitectures();
+
+    // 点击页面其他地方关闭架构下拉菜单
+    document.addEventListener('click', (e) => {
+        const dropdown = document.getElementById('arch-dropdown');
+        if (dropdown && !dropdown.contains(e.target)) {
+            document.getElementById('arch-menu')?.classList.add('hidden');
+        }
+    });
 });
 
 // ==================== 模式切换（调用后端生成代码） ====================
@@ -186,6 +215,7 @@ function createNode(type, x, y) {
 
     // 自动验证
     debounceValidate();
+    updateCanvasBounds();
 
     return node;
 }
@@ -235,6 +265,7 @@ function renderNode(node) {
         if (e.target.classList.contains('node-port')) return;
         selectNode(node.id);
         draggedNodeId = node.id;
+        dragBounds = getDragBounds();
         const rect = el.getBoundingClientRect();
         canvasOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     });
@@ -287,6 +318,7 @@ function deleteNode(nodeId) {
     drawConnections();
     updateStats();
     debounceValidate();
+    updateCanvasBounds();
 }
 
 function deleteSelected() {
@@ -303,9 +335,10 @@ function clearCanvas() {
     drawConnections();
     updateStats();
     updatePropertiesPanel();
+    updateCanvasBounds();
 }
 
-// ==================== 画布交互（保持不变） ====================
+// ==================== 画布交互 ====================
 function initCanvasEvents() {
     const container = document.getElementById('nodes-container');
     const svg = document.getElementById('connections-svg');
@@ -328,9 +361,10 @@ function initCanvasEvents() {
         }
 
         if (isDrawingConnection && tempConnection) {
-            const rect = svg.getBoundingClientRect();
-            tempConnection.x = e.clientX - rect.left + container.scrollLeft;
-            tempConnection.y = e.clientY - rect.top + container.scrollTop;
+            const canvasContainer = document.getElementById('canvas-container');
+            const rect = canvasContainer.getBoundingClientRect();
+            tempConnection.x = e.clientX - rect.left + canvasContainer.scrollLeft;
+            tempConnection.y = e.clientY - rect.top + canvasContainer.scrollTop;
             drawConnections();
         }
     });
@@ -409,26 +443,22 @@ function startConnection(nodeId, portName, portType, e) {
 
 function drawConnections() {
     const svg = document.getElementById('connections-svg');
-    const container = document.getElementById('nodes-container');
     svg.innerHTML = '';
 
     connections.forEach(conn => {
-        const fromNode = document.getElementById(`node-${conn.from.nodeId}`);
-        const toNode = document.getElementById(`node-${conn.to.nodeId}`);
-        if (!fromNode || !toNode) return;
+        const fromNodeData = nodes.find(n => n.id === conn.from.nodeId);
+        const toNodeData = nodes.find(n => n.id === conn.to.nodeId);
+        if (!fromNodeData || !toNodeData) return;
 
-        const fromPort = fromNode.querySelector(`[data-port="${conn.from.port}"]`);
-        const toPort = toNode.querySelector(`[data-port="${conn.to.port}"]`);
-        if (!fromPort || !toPort) return;
+        const fromPortIdx = fromNodeData.outputs.indexOf(conn.from.port);
+        const toPortIdx = toNodeData.inputs.indexOf(conn.to.port);
+        if (fromPortIdx === -1 || toPortIdx === -1) return;
 
-        const fromRect = fromPort.getBoundingClientRect();
-        const toRect = toPort.getBoundingClientRect();
-        const svgRect = svg.getBoundingClientRect();
-
-        const x1 = fromRect.left + fromRect.width / 2 - svgRect.left + container.scrollLeft;
-        const y1 = fromRect.top + fromRect.height / 2 - svgRect.top + container.scrollTop;
-        const x2 = toRect.left + toRect.width / 2 - svgRect.left + container.scrollLeft;
-        const y2 = toRect.top + toRect.height / 2 - svgRect.top + container.scrollTop;
+        // 直接基于节点属性计算端口中心坐标（避免 getBoundingClientRect 受滚动影响）
+        const x1 = fromNodeData.x + NODE_WIDTH + 6;
+        const y1 = fromNodeData.y + 20 + fromPortIdx * 25 + 6;
+        const x2 = toNodeData.x - 6;
+        const y2 = toNodeData.y + 20 + toPortIdx * 25 + 6;
 
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         const controlOffset = Math.abs(x2 - x1) / 2;
@@ -445,20 +475,19 @@ function drawConnections() {
     });
 
     if (isDrawingConnection && tempConnection) {
-        const fromNode = document.getElementById(`node-${tempConnection.from.nodeId}`);
-        const fromPort = fromNode?.querySelector(`[data-port="${tempConnection.from.port}"]`);
+        const fromNodeData = nodes.find(n => n.id === tempConnection.from.nodeId);
+        if (!fromNodeData) return;
 
-        if (fromPort) {
-            const fromRect = fromPort.getBoundingClientRect();
-            const svgRect = svg.getBoundingClientRect();
-            const x1 = fromRect.left + fromRect.width / 2 - svgRect.left + container.scrollLeft;
-            const y1 = fromRect.top + fromRect.height / 2 - svgRect.top + container.scrollTop;
+        const fromPortIdx = fromNodeData.outputs.indexOf(tempConnection.from.port);
+        if (fromPortIdx === -1) return;
 
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('d', `M ${x1} ${y1} L ${tempConnection.x} ${tempConnection.y}`);
-            path.setAttribute('class', 'connection-line temp');
-            svg.appendChild(path);
-        }
+        const x1 = fromNodeData.x + NODE_WIDTH + 6;
+        const y1 = fromNodeData.y + 20 + fromPortIdx * 25 + 6;
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', `M ${x1} ${y1} L ${tempConnection.x} ${tempConnection.y}`);
+        path.setAttribute('class', 'connection-line temp');
+        svg.appendChild(path);
     }
 }
 
@@ -672,6 +701,31 @@ function insertTemplate(template) {
 }
 
 // ==================== 辅助功能 ====================
+function updateCanvasBounds() {
+    const container = document.getElementById('nodes-container');
+    if (!container || nodes.length === 0) return;
+
+    let maxX = 0;
+    let maxY = 0;
+    nodes.forEach(n => {
+        maxX = Math.max(maxX, n.x + NODE_WIDTH + CANVAS_PADDING);
+        maxY = Math.max(maxY, n.y + NODE_HEIGHT + CANVAS_PADDING);
+    });
+
+    const parent = container.parentElement;
+    if (parent) {
+        const minW = Math.max(parent.clientWidth, maxX);
+        const minH = Math.max(parent.clientHeight, maxY);
+        container.style.minWidth = `${minW}px`;
+        container.style.minHeight = `${minH}px`;
+        const svg = document.getElementById('connections-svg');
+        if (svg) {
+            svg.style.width = `${minW}px`;
+            svg.style.height = `${minH}px`;
+        }
+    }
+}
+
 function autoLayout() {
     // 简单的网格布局
     const levels = {};
@@ -881,6 +935,116 @@ function showValidationErrors(errors) {
 
 function clearValidationErrors() {
     // 清除错误提示
+}
+
+// ==================== 架构加载 ====================
+function toggleArchDropdown() {
+    const menu = document.getElementById('arch-menu');
+    if (menu) {
+        menu.classList.toggle('hidden');
+    }
+}
+
+async function loadArchitectures() {
+    try {
+        const response = await fetch('/api/architecture/list');
+        const data = await response.json();
+        const listEl = document.getElementById('arch-list');
+
+        if (data.success && data.architectures && data.architectures.length > 0) {
+            listEl.innerHTML = data.architectures.map(arch => `
+                <button onclick="loadArchitecture('${arch.name}')"
+                    class="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-colors flex items-center space-x-2">
+                    <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                    </svg>
+                    <span>${arch.display_name}</span>
+                </button>
+            `).join('');
+        } else {
+            listEl.innerHTML = '<div class="px-4 py-2 text-xs text-gray-500">暂无架构</div>';
+        }
+    } catch (err) {
+        console.error('加载架构列表失败:', err);
+        const listEl = document.getElementById('arch-list');
+        if (listEl) {
+            listEl.innerHTML = '<div class="px-4 py-2 text-xs text-red-500">加载失败</div>';
+        }
+    }
+}
+
+async function loadArchitecture(name) {
+    const menu = document.getElementById('arch-menu');
+    if (menu) menu.classList.add('hidden');
+
+    if (nodes.length > 0) {
+        if (!confirm('加载架构将清空当前画布，是否继续？')) return;
+    }
+
+    try {
+        const response = await fetch(`/api/architecture/load/${name}`);
+        const data = await response.json();
+
+        if (!data.success || !data.graph) {
+            alert('加载失败: ' + (data.error || '未知错误'));
+            return;
+        }
+
+        // 清空当前画布
+        nodes = [];
+        connections = [];
+        selectedNodeId = null;
+        document.getElementById('nodes-container').innerHTML = '';
+
+        const graph = data.graph;
+
+        // 重建节点
+        let maxNodeId = 0;
+        graph.nodes.forEach(nodeData => {
+            const defaults = COMPONENT_DEFAULTS[nodeData.type] || { inputs: ['in'], outputs: ['out'] };
+            const node = {
+                id: nodeData.id,
+                type: nodeData.type,
+                x: nodeData.x,
+                y: nodeData.y,
+                properties: { ...(nodeData.properties || {}) },
+                inputs: [...(defaults.inputs || [])],
+                outputs: [...(defaults.outputs || [])]
+            };
+            nodes.push(node);
+            renderNode(node);
+            if (node.id > maxNodeId) maxNodeId = node.id;
+        });
+        nodeIdCounter = maxNodeId;
+
+        // 重建连接
+        let maxConnId = 0;
+        graph.connections.forEach((connData, idx) => {
+            connections.push({
+                id: idx + 1,
+                from: { ...connData.from },
+                to: { ...connData.to }
+            });
+            maxConnId = idx + 1;
+        });
+        connectionIdCounter = maxConnId;
+
+        drawConnections();
+        updateStats();
+        updatePropertiesPanel();
+        updateCanvasBounds();
+        debounceValidate();
+
+        // 如果在代码模式，自动重新生成代码
+        if (!document.getElementById('code-mode').classList.contains('hidden')) {
+            debounceGenerate();
+        }
+
+    } catch (err) {
+        console.error('加载经典架构失败:', err);
+        alert('加载失败: ' + err.message);
+    }
 }
 
 // 防抖函数，避免频繁请求后端

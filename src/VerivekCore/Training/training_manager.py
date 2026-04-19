@@ -3,11 +3,23 @@ import os
 import time
 import hashlib
 import tempfile
+import subprocess
+import threading
+import json
+from datetime import datetime
+from typing import List, Dict, Optional, Any
 from ..Database.db_client import DbClient
 from ..Database.training_repository import TrainingRepository
 
 
 class TrainingManager:
+    # 全局训练进程映射: training_id -> subprocess.Popen
+    _processes: Dict[int, subprocess.Popen] = {}
+    # 全局日志缓冲区: training_id -> list[str]
+    _logs: Dict[int, List[str]] = {}
+    # 全局指标缓冲区: training_id -> list[dict]
+    _metrics_buffer: Dict[int, List[Dict]] = {}
+
     def __init__(self, db_client: DbClient):
         self.db_client = db_client
         self.repo = TrainingRepository(db_client)
@@ -42,9 +54,131 @@ class TrainingManager:
         return training_id
 
     def start_training(self, training_id: int) -> None:
-        """标记训练开始"""
+        """启动训练进程并实时采集日志与指标"""
+        training = self.repo.get_training_by_id(training_id)
+        if not training:
+            raise ValueError(f"训练任务 {training_id} 不存在")
+
+        if training['status'] not in ('pending', 'failed'):
+            raise ValueError(f"训练任务当前状态为 {training['status']}，无法启动")
+
+        # 查找训练脚本目录
+        script_dir = os.path.join(
+            os.path.expanduser('~'), 'VeriVek', 'TrainingEnv', str(training_id)
+        )
+        train_script = os.path.join(script_dir, 'train.py')
+        if not os.path.exists(train_script):
+            raise RuntimeError(f"训练脚本不存在: {train_script}")
+
+        # 初始化日志和指标缓冲区
+        self._logs[training_id] = []
+        self._metrics_buffer[training_id] = []
+
+        # 启动训练进程
+        env = os.environ.copy()
+        env['PYTHONUNBUFFERED'] = '1'
+
+        try:
+            proc = subprocess.Popen(
+                [self._get_python_executable(), train_script],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+                cwd=script_dir
+            )
+        except Exception as e:
+            self.repo.update_training_status(training_id, status='failed', error_message=str(e))
+            raise RuntimeError(f"启动训练进程失败: {e}")
+
+        self._processes[training_id] = proc
         self.repo.update_training_status(training_id, status='running')
-        print(f"训练 {training_id} 开始")
+        print(f"训练 {training_id} 进程已启动 (PID={proc.pid})")
+
+        # 启动后台线程采集日志
+        threading.Thread(
+            target=self._collect_logs,
+            args=(training_id, proc),
+            daemon=True
+        ).start()
+
+    @staticmethod
+    def _get_python_executable() -> str:
+        """获取当前 Python 解释器路径"""
+        import sys
+        return sys.executable
+
+    def _collect_logs(self, training_id: int, proc: subprocess.Popen) -> None:
+        """后台线程：采集 stdout 日志并解析指标"""
+        logs = self._logs.get(training_id, [])
+        metrics_buffer = self._metrics_buffer.get(training_id, [])
+
+        try:
+            for line in proc.stdout:
+                line = line.rstrip('\n')
+                logs.append(line)
+                # 保留最近 5000 行
+                if len(logs) > 5000:
+                    logs.pop(0)
+
+                # 尝试解析指标 JSON 行
+                if line.startswith('{"metrics":'):
+                    try:
+                        data = json.loads(line)
+                        metrics_buffer.append(data.get('metrics', {}))
+                        if len(metrics_buffer) > 1000:
+                            metrics_buffer.pop(0)
+                        # 同时更新数据库中的训练指标
+                        self.repo.update_training_status(
+                            training_id,
+                            status='running',
+                            metrics=data.get('metrics', {})
+                        )
+                    except json.JSONDecodeError:
+                        pass
+        except Exception as e:
+            logs.append(f"[LogCollector Error] {e}")
+        finally:
+            proc.wait()
+            returncode = proc.returncode
+            if returncode == 0:
+                self.repo.update_training_status(training_id, status='completed')
+                print(f"训练 {training_id} 正常结束")
+            else:
+                error_msg = f"进程退出码: {returncode}"
+                if logs:
+                    error_msg += f" | 最后日志: {logs[-1][:200]}"
+                self.repo.update_training_status(
+                    training_id, status='failed', error_message=error_msg
+                )
+                print(f"训练 {training_id} 失败: {error_msg}")
+            # 清理进程引用
+            self._processes.pop(training_id, None)
+
+    def get_training_logs(self, training_id: int, tail: int = 200) -> List[str]:
+        """获取训练日志（最近 N 行）"""
+        logs = self._logs.get(training_id, [])
+        return logs[-tail:] if logs else []
+
+    def get_training_metrics(self, training_id: int, tail: int = 100) -> List[Dict]:
+        """获取训练指标历史（最近 N 条）"""
+        metrics = self._metrics_buffer.get(training_id, [])
+        return metrics[-tail:] if metrics else []
+
+    def stop_training(self, training_id: int) -> None:
+        """强制停止训练进程"""
+        proc = self._processes.get(training_id)
+        if proc and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            self.repo.update_training_status(training_id, status='cancelled')
+            print(f"训练 {training_id} 已强制停止")
+        else:
+            raise ValueError(f"训练 {training_id} 没有在运行")
 
     def update_metrics(
             self,

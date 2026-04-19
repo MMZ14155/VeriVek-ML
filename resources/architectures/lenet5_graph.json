@@ -1,0 +1,33 @@
+{
+  "nodes": [
+    { "id": 1, "type": "Input", "x": 80, "y": 200, "properties": { "shape": [1, 1, 32, 32] } },
+    { "id": 2, "type": "Conv2d", "x": 260, "y": 200, "properties": { "out_channels": 6, "kernel_size": 5, "stride": 1, "padding": 0 } },
+    { "id": 3, "type": "Tanh", "x": 440, "y": 200, "properties": {} },
+    { "id": 4, "type": "AvgPool2d", "x": 620, "y": 200, "properties": { "kernel_size": 2, "stride": 2, "padding": 0 } },
+    { "id": 5, "type": "Conv2d", "x": 800, "y": 200, "properties": { "out_channels": 16, "kernel_size": 5, "stride": 1, "padding": 0 } },
+    { "id": 6, "type": "Tanh", "x": 980, "y": 200, "properties": {} },
+    { "id": 7, "type": "AvgPool2d", "x": 1160, "y": 200, "properties": { "kernel_size": 2, "stride": 2, "padding": 0 } },
+    { "id": 8, "type": "Flatten", "x": 1340, "y": 200, "properties": { "start_dim": 1, "end_dim": -1 } },
+    { "id": 9, "type": "Linear", "x": 1520, "y": 120, "properties": { "out_features": 120, "bias": true } },
+    { "id": 10, "type": "Tanh", "x": 1700, "y": 120, "properties": {} },
+    { "id": 11, "type": "Linear", "x": 1880, "y": 120, "properties": { "out_features": 84, "bias": true } },
+    { "id": 12, "type": "Tanh", "x": 2060, "y": 120, "properties": {} },
+    { "id": 13, "type": "Linear", "x": 2240, "y": 120, "properties": { "out_features": 10, "bias": true } },
+    { "id": 14, "type": "Output", "x": 2420, "y": 120, "properties": {} }
+  ],
+  "connections": [
+    { "from": { "nodeId": 1, "port": "out" }, "to": { "nodeId": 2, "port": "in" } },
+    { "from": { "nodeId": 2, "port": "out" }, "to": { "nodeId": 3, "port": "in" } },
+    { "from": { "nodeId": 3, "port": "out" }, "to": { "nodeId": 4, "port": "in" } },
+    { "from": { "nodeId": 4, "port": "out" }, "to": { "nodeId": 5, "port": "in" } },
+    { "from": { "nodeId": 5, "port": "out" }, "to": { "nodeId": 6, "port": "in" } },
+    { "from": { "nodeId": 6, "port": "out" }, "to": { "nodeId": 7, "port": "in" } },
+    { "from": { "nodeId": 7, "port": "out" }, "to": { "nodeId": 8, "port": "in" } },
+    { "from": { "nodeId": 8, "port": "out" }, "to": { "nodeId": 9, "port": "in" } },
+    { "from": { "nodeId": 9, "port": "out" }, "to": { "nodeId": 10, "port": "in" } },
+    { "from": { "nodeId": 10, "port": "out" }, "to": { "nodeId": 11, "port": "in" } },
+    { "from": { "nodeId": 11, "port": "out" }, "to": { "nodeId": 12, "port": "in" } },
+    { "from": { "nodeId": 12, "port": "out" }, "to": { "nodeId": 13, "port": "in" } },
+    { "from": { "nodeId": 13, "port": "out" }, "to": { "nodeId": 14, "port": "in" } }
+  ]
+}
