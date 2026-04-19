@@ -65,6 +65,20 @@ def auth_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'success': False, 'error': '未登录或登录已过期'}), 401
+        # 检查是否为管理员
+        user_id = session.get('user_id')
+        result = execute_query(db_client.db_conn,
+            "SELECT role FROM users WHERE user_id = %s", (user_id,))
+        if not result or result[0].get('role') != 'admin':
+            return jsonify({'success': False, 'error': '权限不足，仅管理员可操作'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route('/')
 def index():
     if 'user_id' in session:
@@ -106,6 +120,11 @@ def training():
 @login_required
 def model_builder():
     return render_template('_model_builder.html')
+
+@app.route('/profile')
+@login_required
+def profile():
+    return render_template('_profile.html')
 
 def execute_query(conn, query, params=None):
     import psycopg2.extras
@@ -1589,6 +1608,159 @@ def stop_training_task(training_id):
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/profile', methods=['GET'])
+@auth_required
+def api_user_profile_contributions():
+    """获取当前登录用户的个人贡献统计信息"""
+    try:
+        user_id = session.get('user_id')
+        query = """
+            SELECT
+                u.user_id,
+                u.username,
+                u.role,
+                u.created_at,
+                COALESCE(dv.count, 0) AS dataset_contributions,
+                COALESCE(mc.count, 0) AS model_contributions,
+                COALESCE(tc.count, 0) AS training_count
+            FROM users u
+            LEFT JOIN (
+                SELECT created_by, COUNT(*) AS count
+                FROM dataset_versions
+                GROUP BY created_by
+            ) dv ON dv.created_by = u.user_id
+            LEFT JOIN (
+                SELECT author, COUNT(*) AS count
+                FROM model_commits
+                GROUP BY author
+            ) mc ON mc.author = u.user_id
+            LEFT JOIN (
+                SELECT created_by, COUNT(*) AS count
+                FROM trainings
+                GROUP BY created_by
+            ) tc ON tc.created_by = u.user_id
+            WHERE u.user_id = %s
+        """
+        result = execute_query(db_client.db_conn, query, (user_id,))
+        if not result:
+            return jsonify({'success': False, 'error': '用户不存在'}), 404
+
+        user = dict(result[0])
+        total = user['dataset_contributions'] + user['model_contributions'] + user['training_count']
+        user['total_contributions'] = total
+
+        return jsonify({
+            'success': True,
+            'user': user
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/users', methods=['GET'])
+@admin_required
+def api_admin_list_users():
+    """管理员：获取所有用户列表"""
+    try:
+        query = """
+            SELECT user_id, username, role, created_at, last_login_at
+            FROM users
+            ORDER BY user_id
+        """
+        result = execute_query(db_client.db_conn, query)
+        users = [dict(row) for row in result]
+        return jsonify({'success': True, 'users': users})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/users', methods=['POST'])
+@admin_required
+def api_admin_create_user():
+    """管理员：创建新用户"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '请求体不能为空'}), 400
+
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+        role = data.get('role', 'researcher').strip()
+
+        if not username or not password:
+            return jsonify({'success': False, 'error': '用户名和密码不能为空'}), 400
+
+        if len(username) < 3 or len(username) > 50:
+            return jsonify({'success': False, 'error': '用户名长度需在3-50字符之间'}), 400
+
+        if len(password) < 6:
+            return jsonify({'success': False, 'error': '密码长度至少6位'}), 400
+
+        if role not in ('admin', 'researcher', 'guest'):
+            role = 'researcher'
+
+        exists = execute_query(db_client.db_conn,
+            "SELECT 1 FROM users WHERE username = %s", (username,))
+        if exists:
+            return jsonify({'success': False, 'error': '用户名已存在'}), 409
+
+        password_hash = _hash_password(password)
+
+        query = """
+            INSERT INTO users (username, password, role)
+            VALUES (%s, %s, %s)
+            RETURNING user_id
+        """
+        result = execute_query(db_client.db_conn, query, (username, password_hash, role))
+        user_id = result[0]['user_id'] if result else None
+
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'message': f'用户 "{username}" 创建成功'
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'创建失败: {str(e)}'}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@admin_required
+def api_admin_delete_user(user_id):
+    """管理员：删除用户（不能删除自己）"""
+    try:
+        current_user_id = session.get('user_id')
+        if user_id == current_user_id:
+            return jsonify({'success': False, 'error': '不能删除当前登录的账号'}), 400
+
+        # 检查用户是否存在
+        exists = execute_query(db_client.db_conn,
+            "SELECT username FROM users WHERE user_id = %s", (user_id,))
+        if not exists:
+            return jsonify({'success': False, 'error': '用户不存在'}), 404
+
+        username = exists[0]['username']
+
+        execute_query(db_client.db_conn,
+            "DELETE FROM users WHERE user_id = %s", (user_id,))
+
+        return jsonify({
+            'success': True,
+            'message': f'用户 "{username}" 已注销'
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
