@@ -488,78 +488,101 @@ function closeModal() {
     document.getElementById('detail-modal').classList.add('hidden');
 }
 
-// 启动新训练
+// ===== 表单提交：演示模式走模拟逻辑，正常模式调用真实 API =====
 document.getElementById('new-training-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('start-btn');
     const originalContent = btn.innerHTML;
 
-    btn.innerHTML = '<svg class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>创建中...</span>';
+    // 显示加载状态
+    btn.innerHTML = '<svg class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>准备中...</span>';
     btn.disabled = true;
 
     const formData = new FormData(e.target);
-    // 解析数据版本选择（格式：type:id）
-    const dataVersionValue = formData.get('data_version_id') || '';
-    const [versionType, versionId] = dataVersionValue.split(':');
 
-    const datasetId = parseInt(formData.get('dataset_id'));
+    if (typeof isDemoMode === 'function' && isDemoMode()) {
+        // ===== 演示模式：模拟 =====
+        const modelSelect = document.getElementById('model-select');
+        const datasetSelect = document.getElementById('dataset-select');
+        const modelName = modelSelect?.options[modelSelect.selectedIndex]?.text?.split(' (')[0] || 'ResNet50';
+        const datasetName = datasetSelect?.options[datasetSelect.selectedIndex]?.text?.split(' (')[0] || 'CIFAR-10';
 
-    const payload = {
-        training_name: formData.get('training_name'),
-        model_commit_id: parseInt(formData.get('model_commit_id')),
-        hyperparameters: {
-            epochs: parseInt(formData.get('epochs')),
-            batch_size: parseInt(formData.get('batch_size')),
-            lr: parseFloat(formData.get('lr')),
-            optimizer: formData.get('optimizer')
-        }
-    };
+        const demoTraining = {
+            training_id: 'demo_' + Date.now(),
+            training_name: formData.get('training_name') || 'ResNet50-CIFAR10-演示',
+            status: 'running',
+            progress: 15,
+            model_name: modelName,
+            dataset_name: datasetName,
+            data_source_type: 'raw',
+            hyperparameters: {
+                epochs: parseInt(formData.get('epochs')) || 50,
+                batch_size: parseInt(formData.get('batch_size')) || 32,
+                lr: parseFloat(formData.get('lr')) || 0.001,
+                optimizer: formData.get('optimizer') || 'Adam'
+            },
+            created_at: new Date().toISOString(),
+            created_by: 'Demo-User',
+            is_demo: true,
+            gpu_info: {
+                name: 'NVIDIA GPU',
+                total_memory_gb: 8.0,
+                used_memory_gb: 7.2,
+                temperature: 72
+            }
+        };
 
-    // 根据选择的版本类型设置参数
-    if (versionType === 'preprocessed') {
-        payload.preprocessed_id = parseInt(versionId);
-        // 预处理版本不提交 dataset_id
-    } else {
-        payload.dataset_id = datasetId;
-        payload.version_id = parseInt(versionId);
-    }
+        localStorage.setItem('verivek_demo_training', JSON.stringify(demoTraining));
 
-    try {
-        const response = await fetch('/api/trainings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-
-        if (data.error) {
-            alert('创建失败：' + data.error);
-            btn.innerHTML = originalContent;
-            btn.disabled = false;
-            return;
-        }
-
-        btn.innerHTML = '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span>创建成功</span>';
-        btn.classList.remove('from-indigo-600', 'to-purple-600');
-        btn.classList.add('from-emerald-600', 'to-emerald-500');
-
-        // 刷新列表
         setTimeout(() => {
-            loadTrainings();
-            // 重置表单
-            e.target.reset();
+            btn.innerHTML = '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span>跳转中...</span>';
+            window.location.href = '/dashboard?demo=true&new_training=1';
+        }, 800);
+    } else {
+        // ===== 正常模式：调用真实 API =====
+        const payload = {
+            training_name: formData.get('training_name'),
+            model_commit_id: parseInt(formData.get('model_commit_id')),
+            hyperparameters: {
+                epochs: parseInt(formData.get('epochs')) || 50,
+                batch_size: parseInt(formData.get('batch_size')) || 32,
+                lr: parseFloat(formData.get('lr')) || 0.001,
+                optimizer: formData.get('optimizer') || 'Adam'
+            },
+            auto_start: true
+        };
+
+        const datasetId = formData.get('dataset_id');
+        const versionType = formData.get('data_version_type');
+        const versionId = formData.get('data_version_id');
+
+        if (versionType === 'preprocessed' && versionId) {
+            payload.preprocessed_id = parseInt(versionId);
+        } else if (datasetId) {
+            payload.dataset_id = parseInt(datasetId);
+        }
+
+        try {
+            const response = await fetch('/api/trainings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                btn.innerHTML = '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span>启动成功</span>';
+                window.location.href = '/dashboard';
+            } else {
+                alert('启动失败：' + (result.error || '未知错误'));
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+            }
+        } catch (err) {
+            alert('网络错误：' + err);
             btn.innerHTML = originalContent;
             btn.disabled = false;
-            btn.classList.add('from-indigo-600', 'to-purple-600');
-            btn.classList.remove('from-emerald-600', 'to-emerald-500');
-        }, 1000);
-
-    } catch (err) {
-        console.error('Error:', err);
-        alert('创建失败，请检查网络连接');
-        btn.innerHTML = originalContent;
-        btn.disabled = false;
+        }
     }
 });
 

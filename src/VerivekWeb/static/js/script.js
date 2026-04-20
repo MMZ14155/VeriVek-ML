@@ -246,6 +246,10 @@ function updateSidebarGPUError() {
 
 // 更新 GPU 正常显示数据
 function updateGPUDisplay(data) {
+    if (typeof isDemoMode === 'function' && isDemoMode()) {
+        return;
+    }
+
     const totalGB = (data.total_memory_mb / 1024).toFixed(1);
     const usedGB = (data.used_memory_mb / 1024).toFixed(1);
     const percent = data.usage_percent;
@@ -320,4 +324,61 @@ function escapeHtml(text) {
 document.addEventListener('DOMContentLoaded', () => {
     fetchGPUInfo();
     setInterval(fetchGPUInfo, 2000);
+    initDemoMode();
 });
+
+// ========== 演示模式（极致隐蔽） ==========
+// 触发方式：1秒内连续按 3 次 `~` 键
+// 状态标记：品牌后缀颜色、版本号边框/背景色发生微妙变化
+// 状态存储键名伪装成缓存相关键
+const DEMO_KEY = '__vv_cache_key';
+let tildeCount = 0;
+let tildeTimer = null;
+
+function isDemoMode() {
+    return localStorage.getItem(DEMO_KEY) === '1';
+}
+
+function setDemoMode(enabled) {
+    localStorage.setItem(DEMO_KEY, enabled ? '1' : '0');
+    applyDemoMarker();
+}
+
+function applyDemoMarker() {
+    const suffix = document.getElementById('brand-suffix');
+    const badge = document.getElementById('version-badge');
+    const active = isDemoMode();
+    if (suffix) {
+        suffix.classList.toggle('text-indigo-400', !active);
+        suffix.classList.toggle('text-amber-400/60', active);
+    }
+    if (badge) {
+        badge.classList.toggle('bg-indigo-500/20', !active);
+        badge.classList.toggle('text-indigo-300', !active);
+        badge.classList.toggle('border-indigo-500/30', !active);
+        badge.classList.toggle('bg-amber-500/10', active);
+        badge.classList.toggle('text-amber-300/70', active);
+        badge.classList.toggle('border-amber-500/20', active);
+    }
+}
+
+function initDemoMode() {
+    applyDemoMarker();
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== '~' && e.key !== '`') return;
+        e.preventDefault();
+        tildeCount++;
+        if (!tildeTimer) {
+            tildeTimer = setTimeout(() => {
+                tildeCount = 0;
+                tildeTimer = null;
+            }, 1000);
+        }
+        if (tildeCount >= 3) {
+            clearTimeout(tildeTimer);
+            tildeTimer = null;
+            tildeCount = 0;
+            setDemoMode(!isDemoMode());
+        }
+    });
+}
