@@ -553,13 +553,24 @@ document.getElementById('new-training-form').addEventListener('submit', async (e
         };
 
         const datasetId = formData.get('dataset_id');
-        const versionType = formData.get('data_version_type');
-        const versionId = formData.get('data_version_id');
+        const versionSelect = document.getElementById('dataset-version-select');
+        const selectedValue = versionSelect ? versionSelect.value : '';
+
+        let versionType = 'original';
+        let versionId = null;
+        if (selectedValue && selectedValue.includes(':')) {
+            const parts = selectedValue.split(':');
+            versionType = parts[0];
+            versionId = parseInt(parts[1], 10) || null;
+        }
 
         if (versionType === 'preprocessed' && versionId) {
-            payload.preprocessed_id = parseInt(versionId);
+            payload.preprocessed_id = versionId;
         } else if (datasetId) {
             payload.dataset_id = parseInt(datasetId);
+            if (versionType === 'original' && versionId) {
+                payload.version_id = versionId;
+            }
         }
 
         try {

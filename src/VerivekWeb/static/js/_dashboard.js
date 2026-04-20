@@ -1,5 +1,5 @@
-document.addEventListener('DOMContentLoaded', function() {
-    // 初始化训练趋势图表
+document.addEventListener('DOMContentLoaded', async function() {
+    // 初始化训练趋势图表（异步获取真实数据）
     const chartCanvas = document.getElementById('trainingChart');
     if (chartCanvas) {
         const ctx = chartCanvas.getContext('2d');
@@ -7,13 +7,64 @@ document.addEventListener('DOMContentLoaded', function() {
         gradient.addColorStop(0, 'rgba(99, 102, 241, 0.3)');
         gradient.addColorStop(1, 'rgba(99, 102, 241, 0)');
 
+        // 生成最近 7 天的日期标签
+        function getRecentDates(days) {
+            const dates = [];
+            const labels = [];
+            const now = new Date();
+            for (let i = days - 1; i >= 0; i--) {
+                const d = new Date(now);
+                d.setDate(d.getDate() - i);
+                const iso = d.toISOString().split('T')[0];
+                dates.push(iso);
+                labels.push((d.getMonth() + 1) + '/' + d.getDate());
+            }
+            return { dates, labels };
+        }
+
+        const { dates, labels } = getRecentDates(7);
+        let chartData = {
+            labels: labels,
+            counts: dates.map(() => 0),
+            rates: dates.map(() => null)
+        };
+
+        try {
+            const response = await fetch('/api/trainings/trends?days=7');
+            const data = await response.json();
+            if (data.success && data.trends) {
+                const trendMap = {};
+                data.trends.forEach(t => {
+                    trendMap[t.date] = t;
+                });
+
+                chartData.counts = dates.map(d => {
+                    const t = trendMap[d];
+                    return t ? t.total_count : 0;
+                });
+
+                chartData.rates = dates.map((d, idx) => {
+                    const t = trendMap[d];
+                    if (!t || t.total_count === 0) {
+                        // 第一个日期缺失则视为 0
+                        if (idx === 0) return 0;
+                        // 中间日期缺失则连线略过
+                        return null;
+                    }
+                    return Math.round((t.completed_count / t.total_count) * 100);
+                });
+            }
+        } catch (err) {
+            console.error('加载训练趋势失败:', err);
+        }
+
         new Chart(ctx, {
             type: 'line',
             data: {
-                labels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+                labels: chartData.labels,
                 datasets: [{
                     label: '训练任务数',
-                    data: [12, 19, 15, 25, 22, 30, 28],
+                    data: chartData.counts,
                     borderColor: '#6366f1',
                     backgroundColor: gradient,
                     fill: true,
@@ -21,13 +72,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     borderWidth: 3
                 }, {
                     label: '完成率 (%)',
-                    data: [85, 88, 82, 90, 87, 92, 94],
+                    data: chartData.rates,
                     borderColor: '#10b981',
                     borderDash: [5, 5],
                     fill: false,
                     tension: 0.4,
                     borderWidth: 2,
-                    yAxisID: 'y1'
+                    yAxisID: 'y1',
+                    spanGaps: true
                 }]
             },
             options: {

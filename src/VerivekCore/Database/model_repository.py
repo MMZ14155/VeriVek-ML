@@ -149,14 +149,14 @@ class ModelRepository:
     def get_commit(self, commit_id: int) -> Optional[Dict]:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
-                "SELECT commit_id, model_id, message, author, object_key FROM model_commits WHERE commit_id = %s",
+                "SELECT commit_id, model_id, message, author, object_key, bucket_name FROM model_commits WHERE commit_id = %s",
                 (commit_id,)
             )
             row = cur.fetchone()
             if row:
                 return {
                     "commit_id": row[0], "model_id": row[1], "message": row[2],
-                    "author": row[3], "object_key": row[4]
+                    "author": row[3], "object_key": row[4], "bucket_name": row[5]
                 }
             return None
 

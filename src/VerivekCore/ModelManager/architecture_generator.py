@@ -549,6 +549,10 @@ class ArchitectureGenerator:
             layer_name = self.generate_layer_name(node)
             return f"        {target_var} = {layer_name}({input_var})"
 
+        elif node_type in ['LSTM', 'GRU']:
+            layer_name = self.generate_layer_name(node)
+            return f"        {target_var}, _ = {layer_name}({input_var})"
+
         else:
             layer_name = self.generate_layer_name(node)
             return f"        {target_var} = {layer_name}({input_var})"
@@ -755,6 +759,14 @@ class ArchitectureGenerator:
             props = node.get('properties', {})
             inferred = node.get('inferred_properties', {})
             shape = self.node_shapes.get(node_id, [])
+
+            # 获取输入形状（用于参数量计算）
+            input_nodes = self.get_input_nodes(node_id)
+            if input_nodes:
+                input_shapes = [self.node_shapes.get(src_id, self.input_shape) for src_id, _ in input_nodes]
+                input_shape = input_shapes[0] if input_shapes else self.input_shape
+            else:
+                input_shape = self.input_shape
 
             params = 0
             param_details = {}

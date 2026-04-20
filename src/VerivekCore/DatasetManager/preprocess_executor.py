@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Dict, Optional, Callable
 from threading import Thread
 
+import psycopg2
+
 
 class PreprocessExecutor:
     """
@@ -156,21 +158,36 @@ class PreprocessExecutor:
                 except:
                     pass
 
+    def _get_db_conn(self):
+        """为当前线程创建独立的数据库连接（psycopg2 连接非线程安全）"""
+        db_cfg = self.db_client.cfg['database']
+        return psycopg2.connect(
+            host=db_cfg['host'],
+            port=db_cfg['port'],
+            dbname=db_cfg['dbname'],
+            user=db_cfg['user'],
+            password=db_cfg['password']
+        )
+
     def _download_and_extract_version(
         self, dataset_id: int, version_id: int, work_dir: str
     ) -> str:
         """下载并解压数据集版本"""
         # 查询版本信息
-        with self.db_client.db_conn.cursor() as cur:
-            cur.execute(
-                """SELECT bucket_name, object_key FROM dataset_versions WHERE version_id = %s""",
-                (version_id,)
-            )
-            row = cur.fetchone()
-            if not row:
-                raise ValueError(f"版本 {version_id} 不存在")
+        conn = self._get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT bucket_name, object_key FROM dataset_versions WHERE version_id = %s""",
+                    (version_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError(f"版本 {version_id} 不存在")
 
-            bucket_name, object_key = row
+                bucket_name, object_key = row
+        finally:
+            conn.close()
 
         # 下载
         zip_path = os.path.join(work_dir, 'source_data.zip')
@@ -375,14 +392,18 @@ else:
 
     def _update_status(self, preprocessed_id: int, status: str):
         """更新预处理状态"""
-        with self.db_client.db_conn.cursor() as cur:
-            cur.execute(
-                """UPDATE datasets_preprocess 
-                   SET status = %s, updated_at = CURRENT_TIMESTAMP 
-                   WHERE preprocessed_id = %s""",
-                (status, preprocessed_id)
-            )
-            self.db_client.db_conn.commit()
+        conn = self._get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE datasets_preprocess
+                       SET status = %s, updated_at = CURRENT_TIMESTAMP
+                       WHERE preprocessed_id = %s""",
+                    (status, preprocessed_id)
+                )
+                conn.commit()
+        finally:
+            conn.close()
 
     def _update_completed(
         self,
@@ -393,47 +414,59 @@ else:
     ):
         """更新预处理完成状态 - 只更新存在的字段"""
         # 注：根据当前init.sql，只更新status和data_object_key
-        with self.db_client.db_conn.cursor() as cur:
-            cur.execute(
-                """UPDATE datasets_preprocess
-                   SET status = %s,
-                       data_object_key = %s,
-                       updated_at = CURRENT_TIMESTAMP
-                   WHERE preprocessed_id = %s""",
-                ('completed', data_object_key, preprocessed_id)
-            )
-            self.db_client.db_conn.commit()
+        conn = self._get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE datasets_preprocess
+                       SET status = %s,
+                           data_object_key = %s,
+                           updated_at = CURRENT_TIMESTAMP
+                       WHERE preprocessed_id = %s""",
+                    ('completed', data_object_key, preprocessed_id)
+                )
+                conn.commit()
+        finally:
+            conn.close()
 
     def _update_failed(self, preprocessed_id: int, error_message: str):
         """更新预处理失败状态 - 只更新存在的字段"""
         # 注：根据当前init.sql，error_message字段不存在，只更新status
         # 错误信息通过print输出到日志
         print(f"[Preprocess {preprocessed_id}] 错误: {error_message}")
-        with self.db_client.db_conn.cursor() as cur:
-            cur.execute(
-                """UPDATE datasets_preprocess
-                   SET status = %s,
-                       updated_at = CURRENT_TIMESTAMP
-                   WHERE preprocessed_id = %s""",
-                ('failed', preprocessed_id)
-            )
-            self.db_client.db_conn.commit()
+        conn = self._get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE datasets_preprocess
+                       SET status = %s,
+                           updated_at = CURRENT_TIMESTAMP
+                       WHERE preprocessed_id = %s""",
+                    ('failed', preprocessed_id)
+                )
+                conn.commit()
+        finally:
+            conn.close()
 
     def get_preprocess_status(self, preprocessed_id: int) -> Optional[Dict]:
         """获取预处理状态 - 只查询存在的字段"""
-        with self.db_client.db_conn.cursor() as cur:
-            cur.execute(
-                """SELECT preprocessed_id, name, status, data_object_key
-                   FROM datasets_preprocess
-                   WHERE preprocessed_id = %s""",
-                (preprocessed_id,)
-            )
-            row = cur.fetchone()
-            if row:
-                return {
-                    'preprocessed_id': row[0],
-                    'name': row[1],
-                    'status': row[2],
-                    'data_object_key': row[3]
-                }
-            return None
+        conn = self._get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT preprocessed_id, name, status, data_object_key
+                       FROM datasets_preprocess
+                       WHERE preprocessed_id = %s""",
+                    (preprocessed_id,)
+                )
+                row = cur.fetchone()
+                if row:
+                    return {
+                        'preprocessed_id': row[0],
+                        'name': row[1],
+                        'status': row[2],
+                        'data_object_key': row[3]
+                    }
+                return None
+        finally:
+            conn.close()

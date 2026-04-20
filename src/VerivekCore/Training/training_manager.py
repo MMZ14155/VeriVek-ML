@@ -20,9 +20,10 @@ class TrainingManager:
     # 全局指标缓冲区: training_id -> list[dict]
     _metrics_buffer: Dict[int, List[Dict]] = {}
 
-    def __init__(self, db_client: DbClient):
+    def __init__(self, db_client: DbClient, venv_path: str = ""):
         self.db_client = db_client
         self.repo = TrainingRepository(db_client)
+        self._venv_path = venv_path
 
     def create_training(
             self,
@@ -64,7 +65,7 @@ class TrainingManager:
 
         # 查找训练脚本目录
         script_dir = os.path.join(
-            os.path.expanduser('~'), 'VeriVek', 'TrainingEnv', str(training_id)
+            'C:/VeriVek/TaskEnv', 'trainings', str(training_id)
         )
         train_script = os.path.join(script_dir, 'train.py')
         if not os.path.exists(train_script):
@@ -84,6 +85,8 @@ class TrainingManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 env=env,
                 cwd=script_dir
             )
@@ -102,9 +105,15 @@ class TrainingManager:
             daemon=True
         ).start()
 
-    @staticmethod
-    def _get_python_executable() -> str:
-        """获取当前 Python 解释器路径"""
+    def _get_python_executable(self) -> str:
+        """获取训练用的 Python 解释器路径"""
+        if self._venv_path:
+            if os.name == 'nt':
+                python_path = os.path.join(self._venv_path, 'Scripts', 'python.exe')
+            else:
+                python_path = os.path.join(self._venv_path, 'bin', 'python')
+            if os.path.exists(python_path):
+                return python_path
         import sys
         return sys.executable
 
@@ -113,6 +122,8 @@ class TrainingManager:
         logs = self._logs.get(training_id, [])
         metrics_buffer = self._metrics_buffer.get(training_id, [])
 
+        final_metrics = {}
+        total_time = 0
         try:
             for line in proc.stdout:
                 line = line.rstrip('\n')
@@ -136,12 +147,67 @@ class TrainingManager:
                         )
                     except json.JSONDecodeError:
                         pass
+
+                # 尝试解析最终指标 JSON 行
+                if line.startswith('{"final_metrics":'):
+                    try:
+                        data = json.loads(line)
+                        final_metrics = data.get('final_metrics', {})
+                        total_time = data.get('total_time', 0)
+                    except json.JSONDecodeError:
+                        pass
         except Exception as e:
             logs.append(f"[LogCollector Error] {e}")
         finally:
             proc.wait()
             returncode = proc.returncode
             if returncode == 0:
+                # 更新最终指标
+                if final_metrics:
+                    self.repo.update_final_metrics(
+                        training_id, final_metrics, int(total_time)
+                    )
+                # 自动保存权重到 MinIO 并关联数据库
+                script_dir = os.path.join(
+                    'C:/VeriVek/TaskEnv', 'trainings', str(training_id)
+                )
+                last_metrics = metrics_buffer[-1] if metrics_buffer else {}
+                epoch_number = last_metrics.get('epoch', 0)
+
+                # 1) 保存 last 权重（每轮都覆盖，最终为最后一轮状态）
+                last_path = os.path.join(script_dir, 'last_model.pth')
+                if os.path.exists(last_path):
+                    try:
+                        self.save_checkpoint(
+                            training_id=training_id,
+                            weight_path=last_path,
+                            epoch_number=epoch_number,
+                            metrics_snapshot=last_metrics,
+                            note="Auto-saved last model",
+                            save_as_last=True,
+                            save_as_best=False
+                        )
+                    except Exception as werr:
+                        logs.append(f"[Last Weight Save Error] {werr}")
+                        print(f"[Last Weight Save Error] {werr}")
+
+                # 2) 保存 best 权重（验证集最佳）
+                best_path = os.path.join(script_dir, 'best_model.pth')
+                if os.path.exists(best_path):
+                    try:
+                        self.save_checkpoint(
+                            training_id=training_id,
+                            weight_path=best_path,
+                            epoch_number=epoch_number,
+                            metrics_snapshot=last_metrics,
+                            note="Auto-saved best model",
+                            save_as_last=False,
+                            save_as_best=True
+                        )
+                    except Exception as werr:
+                        logs.append(f"[Best Weight Save Error] {werr}")
+                        print(f"[Best Weight Save Error] {werr}")
+
                 self.repo.update_training_status(training_id, status='completed')
                 print(f"训练 {training_id} 正常结束")
             else:
@@ -226,13 +292,17 @@ class TrainingManager:
             global_step: Optional[int] = None,
             metrics_snapshot: Optional[Dict] = None,
             note: str = "",
-            is_best: bool = False
+            save_as_last: bool = True,
+            save_as_best: bool = False
     ) -> Dict[str, int]:
         """
-        保存训练检查点
+        保存训练检查点到对象存储并关联数据库记录
         返回: {'checkpoint_id': int, 'best_id': int} (如果有best)
         """
         results = {}
+
+        if not os.path.exists(weight_path):
+            raise FileNotFoundError(f"权重文件不存在: {weight_path}")
 
         # 生成对象存储路径
         timestamp = int(time.time())
@@ -255,31 +325,31 @@ class TrainingManager:
             raise RuntimeError(f"权重上传失败: {weight_path}")
 
         # 保存为 last 检查点 (覆盖)
-        last_id = self.repo.create_weight(
-            training_id=training_id,
-            weight_type='last',
-            epoch_number=epoch_number,
-            object_key=object_key,
-            format=weight_format,
-            step_number=step_number,
-            global_step=global_step,
-            size_bytes=size_bytes,
-            checksum_sha256=sha256_hash,
-            metrics_snapshot=metrics_snapshot,
-            note=note
-        )
-        results['checkpoint_id'] = last_id
+        if save_as_last:
+            last_id = self.repo.create_weight(
+                training_id=training_id,
+                weight_type='last',
+                epoch_number=epoch_number,
+                object_key=object_key,
+                format=weight_format,
+                step_number=step_number,
+                global_step=global_step,
+                size_bytes=size_bytes,
+                checksum_sha256=sha256_hash,
+                metrics_snapshot=metrics_snapshot,
+                note=note
+            )
+            results['checkpoint_id'] = last_id
+            # 更新 training 的 checkpoint_weight_id
+            self.repo.update_training_weights(training_id, checkpoint_weight_id=last_id)
 
-        # 更新 training 的 checkpoint_weight_id
-        self.repo.update_training_weights(training_id, checkpoint_weight_id=last_id)
-
-        # 如果是最佳权重，同时保存为 best
-        if is_best:
+        # 保存为 best 检查点 (覆盖)
+        if save_as_best:
             best_id = self.repo.create_weight(
                 training_id=training_id,
                 weight_type='best',
                 epoch_number=epoch_number,
-                object_key=object_key,  # 复用同一个文件
+                object_key=object_key,
                 format=weight_format,
                 step_number=step_number,
                 global_step=global_step,
@@ -291,7 +361,7 @@ class TrainingManager:
             self.repo.update_training_weights(training_id, main_weight_id=best_id)
             results['best_id'] = best_id
 
-        print(f"检查点保存成功: epoch={epoch_number}, key={object_key}")
+        print(f"检查点保存成功: epoch={epoch_number}, key={object_key}, last={save_as_last}, best={save_as_best}")
         return results
 
     def get_training_detail(self, training_id: int) -> Dict:
@@ -391,3 +461,7 @@ class TrainingManager:
             for byte_block in iter(lambda: f.read(4096), b""):
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
+
+    def get_training_trends(self, days: int = 7) -> List[Dict]:
+        """获取最近 N 天的训练趋势统计"""
+        return self.repo.get_training_trends(days)

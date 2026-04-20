@@ -18,5 +18,8 @@
         },
         "access_key": "minioadmin",
         "secret_key": "minioadmin"
+    },
+    "training": {
+        "venv_path": "C:/VeriVek/TaskEnv/venv"
     }
 }

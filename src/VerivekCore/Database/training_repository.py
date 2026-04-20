@@ -101,6 +101,28 @@ class TrainingRepository:
                 for r in cur.fetchall()
             ]
 
+    def get_training_trends(self, days: int = 7) -> List[Dict]:
+        """查询最近 N 天每天的训练统计（按 created_at 日期分组）"""
+        with self.db.db_conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    DATE(created_at) AS date,
+                    COUNT(*) AS total_count,
+                    COUNT(*) FILTER (WHERE status = 'completed') AS completed_count
+                FROM trainings
+                WHERE created_at >= CURRENT_DATE - INTERVAL '%s days'
+                GROUP BY DATE(created_at)
+                ORDER BY date ASC
+            """, (days,))
+            return [
+                {
+                    "date": str(r[0]),
+                    "total_count": r[1],
+                    "completed_count": r[2]
+                }
+                for r in cur.fetchall()
+            ]
+
     def create_training(
             self,
             training_name: str,

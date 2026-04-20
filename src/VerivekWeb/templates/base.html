@@ -21,7 +21,7 @@
         <div class="flex items-center space-x-3">
             <div class="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center font-bold text-white">V</div>
             <span class="text-xl font-semibold tracking-tight">Veri<span id="brand-suffix" class="text-indigo-400">Vek</span></span>
-            <span id="version-badge" class="px-2 py-0.5 text-xs bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/30">v2.0</span>
+            <span id="version-badge" class="px-2 py-0.5 text-xs bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/30">v0.1</span>
         </div>
 
         <div class="flex items-center space-x-6">
@@ -51,14 +51,14 @@
                    class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 {% block nav_datasets_class %}hover:bg-white/5 text-gray-400 hover:text-white{% endblock %} group">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                     <span class="font-medium">数据集</span>
-                    <span class="ml-auto text-xs bg-white/10 px-2 py-0.5 rounded-full">12</span>
+                    <span id="sidebar-dataset-count" class="ml-auto text-xs bg-white/10 px-2 py-0.5 rounded-full">--</span>
                 </a>
 
                 <a href="{{ url_for('models') if url_for else 'models.html' }}"
                    class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 {% block nav_models_class %}hover:bg-white/5 text-gray-400 hover:text-white{% endblock %} group">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
                     <span class="font-medium">模型</span>
-                    <span class="ml-auto text-xs bg-white/10 px-2 py-0.5 rounded-full">8</span>
+                    <span id="sidebar-model-count" class="ml-auto text-xs bg-white/10 px-2 py-0.5 rounded-full">--</span>
                 </a>
 
                 <a href="{{ url_for('training') if url_for else 'training.html' }}"

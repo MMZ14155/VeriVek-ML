@@ -84,10 +84,10 @@ class TrainingCodeGenerator:
             "import os",
             "import time",
             "import copy",
+            "import json",
+            "import inspect",
             "from typing import Dict, List, Tuple"
         ]
-        # 导入外部模型
-        imports.append(f"from model import {self.model_class_name}")
         return "\n".join(imports)
 
     def _generate_hyperparams(self) -> str:
@@ -100,34 +100,69 @@ BATCH_SIZE = {batch_size}
 EPOCHS = {epochs}
 LEARNING_RATE = {lr}
 NUM_CLASSES = {self.num_classes}
-DATA_ROOT = "{self.data_root}"
-MODEL_SAVE_PATH = "./best_model.pth"
+DATA_ROOT = r"{self.data_root.replace(chr(92), '/')}"
+BEST_MODEL_SAVE_PATH = "./best_model.pth"
+LAST_MODEL_SAVE_PATH = "./last_model.pth"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 SEED = 42
 torch.manual_seed(SEED)"""
 
     def _generate_data_loaders(self) -> str:
-        # 仅使用 ToTensor，无任何数据增强或归一化
         return f"""# ==================== 数据加载（无预处理，仅转Tensor）====================
-# 注意：如果你的数据集已经提供张量数据，可以移除 transforms 参数或替换为自定义 Dataset
-# 此处仅做必要的 PIL → Tensor 转换，无任何数据增强或归一化
+# 自动检测数据集结构：支持 train/val 子目录，或单目录自动拆分
 transform = transforms.Compose([
-    transforms.ToTensor()   # 仅将 PIL 图像转为 [0,1] 的 Tensor
+    transforms.ToTensor()           # 将 PIL 图像转为 [0,1] 的 Tensor
 ])
 
-train_dataset = datasets.ImageFolder(os.path.join(DATA_ROOT, "train"), transform=transform)
-val_dataset = datasets.ImageFolder(os.path.join(DATA_ROOT, "val"), transform=transform)
+from torch.utils.data import random_split
+
+train_dir = os.path.join(DATA_ROOT, "train")
+val_dir = os.path.join(DATA_ROOT, "val")
+
+if os.path.isdir(train_dir) and os.path.isdir(val_dir):
+    # 标准结构：已有 train/val 拆分
+    train_dataset = datasets.ImageFolder(train_dir, transform=transform)
+    val_dataset = datasets.ImageFolder(val_dir, transform=transform)
+    print("检测到预拆分的数据集结构 (train/val)")
+else:
+    # 单目录结构：自动按 80/20 拆分
+    full_dataset = datasets.ImageFolder(DATA_ROOT, transform=transform)
+    total = len(full_dataset)
+    train_size = int(0.8 * total)
+    val_size = total - train_size
+    train_dataset, val_dataset = random_split(
+        full_dataset, [train_size, val_size],
+        generator=torch.Generator().manual_seed(SEED)
+    )
+    print("检测到单目录数据集，自动按 80/20 拆分为训练集和验证集")
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
 
 print(f"训练集样本数: {{len(train_dataset)}}")
 print(f"验证集样本数: {{len(val_dataset)}}")
-print(f"类别映射: {{train_dataset.classes}}")  # 应为 {self.num_classes} 个类别"""
+if hasattr(train_dataset, 'classes'):
+    print(f"类别映射: {{train_dataset.classes}}")  # 应为 {self.num_classes} 个类别
+else:
+    print(f"类别映射: {{full_dataset.classes}}")"""
 
     def _generate_model_instantiation(self) -> str:
         return f"""# ==================== 实例化模型 ====================
-model = {self.model_class_name}(num_classes=NUM_CLASSES).to(DEVICE)"""
+import model
+
+# 自动检测 model.py 中定义了 forward 方法的模型类
+_model_class = None
+for name, obj in inspect.getmembers(model, inspect.isclass):
+    # 确保 forward 是在该类自身定义的，而不是从 nn.Module 继承的
+    if hasattr(obj, 'forward') and 'forward' in obj.__dict__:
+        _model_class = obj
+        print(f"自动检测到模型类: {{name}}")
+        break
+
+if _model_class is None:
+    raise ImportError("在 model.py 中未找到定义 forward 方法的模型类")
+
+model = _model_class(num_classes=NUM_CLASSES).to(DEVICE)"""
 
     def _generate_loss_optimizer_scheduler(self) -> str:
         opt_name = self.hyperparams['optimizer']
@@ -197,7 +232,7 @@ def validate(model, loader, criterion, device):
     def _generate_train_model_func(self) -> str:
         return """# ==================== 主训练函数（返回耗时、损失率、验证准确率） ====================
 def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler,
-                device, epochs, save_path):
+                device, epochs, best_save_path, last_save_path):
     \"\"\"
     训练模型并返回训练历史与关键指标
     返回:
@@ -235,15 +270,29 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler
               f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | "
               f"Time: {epoch_time:.2f}s | LR: {optimizer.param_groups[0]['lr']:.6f}")
 
+        # 输出 JSON 指标行，供日志采集器解析
+        print(json.dumps({"metrics": {
+            "epoch": epoch,
+            "train_loss": round(train_loss, 6),
+            "train_acc": round(train_acc, 6),
+            "val_loss": round(val_loss, 6),
+            "val_acc": round(val_acc, 6),
+            "best_val_acc": round(best_val_acc, 6),
+            "lr": round(optimizer.param_groups[0]['lr'], 8)
+        }}))
+
+        # 每轮保存 last 模型（覆盖）
+        torch.save(model.state_dict(), last_save_path)
+
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             best_model_wts = copy.deepcopy(model.state_dict())
-            torch.save(best_model_wts, save_path)
+            torch.save(best_model_wts, best_save_path)
             print(f"  -> 保存最佳模型 (Val Acc: {val_acc:.4f})")
 
     total_time = time.time() - total_start
     print(f"\\n训练完成！最佳验证准确率: {best_val_acc:.4f}，总耗时: {total_time:.2f}s")
-    print(f"最佳模型已保存至: {save_path}")
+    print(f"最佳模型已保存至: {best_save_path}")
 
     return history, best_val_acc, total_time"""
 
@@ -252,7 +301,8 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler
 if __name__ == "__main__":
     history, best_acc, total_time = train_model(
         model, train_loader, val_loader, criterion, optimizer, scheduler,
-        device=DEVICE, epochs=EPOCHS, save_path=MODEL_SAVE_PATH
+        device=DEVICE, epochs=EPOCHS,
+        best_save_path=BEST_MODEL_SAVE_PATH, last_save_path=LAST_MODEL_SAVE_PATH
     )
 
     # 打印部分历史数据
@@ -260,7 +310,16 @@ if __name__ == "__main__":
     print(f"最终训练损失: {history['train_loss'][-1]:.4f}")
     print(f"最终验证准确率: {history['val_acc'][-1]:.4f}")
     print(f"最佳验证准确率: {best_acc:.4f}")
-    print(f"总耗时: {total_time:.2f} 秒")"""
+    print(f"总耗时: {total_time:.2f} 秒")
+
+    # 输出最终指标 JSON，供后端解析
+    print(json.dumps({"final_metrics": {
+        "best_val_acc": round(best_acc, 6),
+        "last_val_acc": round(history['val_acc'][-1], 6),
+        "last_train_loss": round(history['train_loss'][-1], 6),
+        "last_val_loss": round(history['val_loss'][-1], 6),
+        "last_train_acc": round(history['train_acc'][-1], 6)
+    }, "total_time": round(total_time, 2)}))"""
 
     def get_hyperparameter_schema(self) -> Dict[str, Any]:
         """返回超参数 schema，用于前端表单生成"""

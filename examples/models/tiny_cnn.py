@@ -12,6 +12,8 @@ class TinyCNN(nn.Module):
         # 批归一化
         self.bn1 = nn.BatchNorm2d(8)
         self.bn2 = nn.BatchNorm2d(16)
+        # 自适应池化，将任意空间尺寸统一为 7x7，保证全连接层输入固定
+        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
         # Dropout
         self.dropout = nn.Dropout(0.25)
         # 全连接层
@@ -22,9 +24,11 @@ class TinyCNN(nn.Module):
         # Conv1 + ReLU + MaxPool: 28x28 -> 14x14
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.max_pool2d(x, 2)
-        # Conv2 + ReLU + MaxPool: 14x14 -> 7x7
+        # Conv2 + ReLU + MaxPool
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.max_pool2d(x, 2)
+        # 自适应池化，统一空间尺寸为 7x7（兼容任意输入大小）
+        x = self.avgpool(x)
         # Flatten
         x = x.view(x.size(0), -1)
         # Dropout

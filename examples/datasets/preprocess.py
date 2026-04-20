@@ -65,10 +65,10 @@ def preprocess_dataset(input_dir=None, output_dir=None, size=(28, 28)):
                     output_file = category_output_path / f"{img_file.stem}.png"
                     try:
                         preprocess_image(img_file, output_file, size)
-                        print(f"✓ 已处理: {category_name}/{img_file.name}")
+                        print(f"[OK] 已处理: {category_name}/{img_file.name}")
                         processed_count += 1
                     except Exception as e:
-                        print(f"✗ 处理失败: {category_name}/{img_file.name}, 错误: {e}")
+                        print(f"[ERR] 处理失败: {category_name}/{img_file.name}, 错误: {e}")
 
     print(f"\n处理完成！共处理 {processed_count} 张图片")
     print(f"输出目录: {output_path}")
@@ -135,6 +135,9 @@ if __name__ == "__main__":
 
     # 执行预处理并直接输出到目标目录
     preprocess_dataset(input_directory, output_directory, size=(28, 28))
+
+    # 划分训练集和验证集
+    split_to_train_val(output_directory, output_directory)
 
     print("\n" + "=" * 50)
     print("[TaskEnv] 预处理完成！数据已保存至:", output_directory)

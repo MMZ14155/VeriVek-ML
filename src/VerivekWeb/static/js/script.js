@@ -320,11 +320,35 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// 侧边栏数量更新
+function updateSidebarCounts() {
+    fetch('/api/datasets')
+        .then(r => r.json())
+        .then(data => {
+            const el = document.getElementById('sidebar-dataset-count');
+            if (el && data.success) {
+                el.textContent = data.total || (data.datasets ? data.datasets.length : 0);
+            }
+        })
+        .catch(() => {});
+
+    fetch('/api/models')
+        .then(r => r.json())
+        .then(data => {
+            const el = document.getElementById('sidebar-model-count');
+            if (el && data.success) {
+                el.textContent = data.total || (data.models ? data.models.length : 0);
+            }
+        })
+        .catch(() => {});
+}
+
 // 页面加载后初始化 GPU 监控
 document.addEventListener('DOMContentLoaded', () => {
     fetchGPUInfo();
     setInterval(fetchGPUInfo, 2000);
     initDemoMode();
+    updateSidebarCounts();
 });
 
 // ========== 演示模式（极致隐蔽） ==========
