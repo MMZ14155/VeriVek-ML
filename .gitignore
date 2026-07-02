@@ -9,3 +9,6 @@ minio.exe
 minio-data
 
 configs/user_config.json
+
+src/VerivekCore/native/HardwareMonitor/build
+src/VerivekCore/Training/hardware_monitor.dll

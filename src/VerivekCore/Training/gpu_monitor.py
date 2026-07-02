@@ -1,65 +1,56 @@
 import ctypes
-from ctypes import wintypes
-import subprocess
+import json
+import os
+
+DLL_PATH = os.path.join(os.path.dirname(__file__), "hardware_monitor.dll")
+
+def _get_lib():
+    return ctypes.CDLL(DLL_PATH, winmode=0)
 
 def get_gpu_info():
     try:
-        cmd = [
-            "nvidia-smi",
-            "--query-gpu=index,name,memory.total,memory.used,memory.free",
-            "--format=csv,noheader,nounits"
+        lib = _get_lib()
+        lib.hm_get_gpu_info.restype = ctypes.c_int
+        buffer = ctypes.create_string_buffer(4096)
+        required = lib.hm_get_gpu_info(buffer, ctypes.sizeof(buffer))
+        if required > ctypes.sizeof(buffer):
+            buffer = ctypes.create_string_buffer(required)
+            lib.hm_get_gpu_info(buffer, ctypes.sizeof(buffer))
+        text = buffer.value.decode("utf-8")
+        gpus = json.loads(text)
+        return [
+            {
+                'index': gpu['index'],
+                'name': gpu['name'],
+                'memory.total': gpu['memory_total'],
+                'memory.used': gpu['memory_used'],
+                'memory.free': gpu['memory_free'],
+            }
+            for gpu in gpus
         ]
-        output = subprocess.check_output(cmd, universal_newlines=True)
-        lines = output.strip().split('\n')
-        gpus = []
-        for line in lines:
-            if not line.strip():
-                continue
-            parts = line.split(', ')
-            if len(parts) != 5:
-                continue
-            idx, name, mem_total, mem_used, mem_free = parts
-            gpus.append({
-                'index': int(idx),
-                'name': name.strip(),
-                'memory.total': mem_total.strip(),
-                'memory.used': mem_used.strip(),
-                'memory.free': mem_free.strip()
-            })
-        return gpus
-    except (subprocess.CalledProcessError, FileNotFoundError, Exception):
+    except Exception:
         return []
 
 def get_total_usage():
-    gpus = get_gpu_info()
-    if not gpus:
+    try:
+        lib = _get_lib()
+        used = ctypes.c_int()
+        total = ctypes.c_int()
+        lib.hm_get_total_usage(ctypes.byref(used), ctypes.byref(total))
+        return used.value, total.value
+    except Exception:
         return 0, 0
 
-    total_mem = 0
-    used_mem = 0
-    for gpu in gpus:
-        total_mem += int(gpu['memory.total'])
-        used_mem += int(gpu['memory.used'])
-    return used_mem, total_mem
-
 def get_ac_status():
-    class SYSTEM_POWER_STATUS(ctypes.Structure):
-        _fields_ = [
-            ("ACLineStatus", wintypes.BYTE),  # 0=离线, 1=在线
-            ("BatteryFlag", wintypes.BYTE),
-            ("BatteryLifePercent", wintypes.BYTE),
-            ("Reserved1", wintypes.BYTE),
-            ("BatteryLifeTime", wintypes.DWORD),
-            ("BatteryFullLifeTime", wintypes.DWORD),
-        ]
-
     try:
-        status = SYSTEM_POWER_STATUS()
-        if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
-            return status.ACLineStatus == 1
-    except:
-        pass
-    return None
+        lib = _get_lib()
+        lib.hm_get_ac_status.restype = ctypes.c_int
+        result = lib.hm_get_ac_status()
+        if result == -1:
+            return None
+        return result == 1
+    except Exception:
+        return None
 
 if __name__ == "__main__":
     # 所有 GPU 的详细信息
