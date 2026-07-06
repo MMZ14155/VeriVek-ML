@@ -19,6 +19,8 @@ from VerivekCore.ModelManager.architecture_generator import ArchitectureGenerato
 from VerivekCore.Training.training_manager import TrainingManager
 from VerivekCore.Training.training_code_generator import TrainingCodeGenerator
 from VerivekCore.Training.gpu_monitor import get_gpu_info, get_total_usage, get_ac_status
+from VerivekCore.Training.venv_check import check_pytorch_in_venv
+from VerivekCore.Training.setup_task_env import create_task_environment, install_pytorch
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'verivek-dev-secret-key-change-in-production')
@@ -74,8 +76,6 @@ os.makedirs(TRAINING_SCRIPTS_DIR, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
 
 def require_auth(mode='api', roles=None):
     def decorator(f):
@@ -133,6 +133,46 @@ def models():
 def training():
     return render_template('_training.html')
 
+@app.route('/dependencies')
+@require_auth(mode='page')
+def dependencies():
+    dependencies_info = {
+        'database': {
+            'type': 'postgres',
+            'label': '数据库',
+            'options': ['postgres', 'mysql'],
+            'config': {
+                'host': db_client.cfg.get('database', {}).get('host', '未知'),
+                'port': db_client.cfg.get('database', {}).get('port', '未知'),
+                'dbname': db_client.cfg.get('database', {}).get('dbname', '未知'),
+                'user': db_client.cfg.get('database', {}).get('user', '未知'),
+            }
+        },
+        'object_storage': {
+            'type': 'minio',
+            'label': '对象存储',
+            'options': ['minio', 'none'],
+            'config': {
+                'endpoint_url': db_client.cfg.get('minio', {}).get('endpoint_url', '未知'),
+                'buckets': db_client.cfg.get('minio', {}).get('buckets', {}),
+                'access_key': db_client.cfg.get('minio', {}).get('access_key', '未知'),
+            }
+        },
+        'ml_backend': {
+            'type': 'pytorch',
+            'label': '机器学习框架',
+            'options': ['pytorch', 'tensorflow'],
+            'config': {
+                'venv_path': _app_config.get('training', {}).get('venv_path', '未知'),
+                'pytorch': check_pytorch_in_venv(
+                    _app_config.get('training', {}).get('venv_path', 'C:/VeriVek/TaskEnv/venv')
+                )
+            }
+        },
+        'config_path': os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'configs', 'config.json'))
+    }
+    return render_template('_dependencies.html', dependencies=dependencies_info)
+
 @app.route('/model-builder')
 @require_auth(mode='page')
 def model_builder():
@@ -147,28 +187,6 @@ def profile():
 @require_auth(mode='page')
 def preprocess_builder():
     return render_template('_preprocess_builder.html')
-
-def execute_query(conn, query, params=None):
-    import psycopg2.extras
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-
-        # 如果是 SELECT 语句，获取结果
-        if query.strip().upper().startswith('SELECT'):
-            result = cursor.fetchall()
-            return result
-        else:
-            conn.commit()
-            return cursor.rowcount
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
-        cursor.close()
 
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
@@ -213,7 +231,6 @@ def api_login():
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': f'登录失败: {str(e)}'}), 500
 
-
 @app.route('/api/auth/register', methods=['POST'])
 def api_register():
     """用户注册接口"""
@@ -252,7 +269,6 @@ def api_register():
         import traceback
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': f'注册失败: {str(e)}'}), 500
-
 
 @app.route('/api/auth/logout', methods=['POST'])
 def api_logout():
@@ -575,10 +591,8 @@ def get_preprocess_status(preprocessed_id: int):
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 # 标注文件扩展名集合
 _ANNOTATION_EXTS = {'.csv', '.xls', '.xlsx', '.json', '.txt', '.tsv'}
-
 
 def _build_tree_from_zip_namelist(namelist):
     """从 zip namelist 构建树形结构"""
@@ -619,7 +633,6 @@ def _build_tree_from_zip_namelist(namelist):
                 current_node = node_map[current_path]
 
     return root
-
 
 @app.route('/api/datasets/<int:dataset_id>/versions/<int:version_id>/structure', methods=['GET'])
 @require_auth()
@@ -674,7 +687,6 @@ def get_dataset_version_structure(dataset_id: int, version_id: int):
         import traceback
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/api/models', methods=['GET'])
 @require_auth()
@@ -732,7 +744,6 @@ def delete_model(model_id):
         import traceback
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/models/<int:model_id>/branches', methods=['POST'])
 @require_auth()
@@ -1088,7 +1099,6 @@ def save_architecture():
             'error': str(e)
         }), 400
 
-
 @app.route('/api/trainings', methods=['POST'])
 @require_auth()
 def create_training():
@@ -1352,7 +1362,6 @@ def get_trainings():
         import traceback
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/api/trainings/<int:training_id>', methods=['GET'])
 @require_auth()
@@ -1632,7 +1641,6 @@ def get_power_status():
             'error': str(e)
         }), 500
 
-
 @app.route('/api/trainings/<int:training_id>/logs', methods=['GET'])
 @require_auth()
 def get_training_logs(training_id):
@@ -1649,7 +1657,6 @@ def get_training_logs(training_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 @app.route('/api/trainings/<int:training_id>/metrics', methods=['GET'])
 @require_auth()
 def get_training_metrics_history(training_id):
@@ -1664,7 +1671,6 @@ def get_training_metrics_history(training_id):
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/api/trainings/<int:training_id>/stop', methods=['POST'])
 @require_auth()
@@ -1716,7 +1722,6 @@ def api_user_profile_contributions():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 @app.route('/api/admin/users', methods=['GET'])
 @require_auth(roles=['admin'])
 def api_admin_list_users():
@@ -1728,7 +1733,6 @@ def api_admin_list_users():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/api/admin/users', methods=['POST'])
 @require_auth(roles=['admin'])
@@ -1771,7 +1775,6 @@ def api_admin_create_user():
         traceback.print_exc()
         return jsonify({'success': False, 'error': f'创建失败: {str(e)}'}), 500
 
-
 @app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
 @require_auth(roles=['admin'])
 def api_admin_delete_user(user_id):
@@ -1798,6 +1801,73 @@ def api_admin_delete_user(user_id):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/dependencies/venv', methods=['POST'])
+@require_auth(roles=['admin'])
+def api_create_venv():
+    """创建训练任务虚拟环境（仅管理员）"""
+    try:
+        venv_path = _app_config.get('training', {}).get('venv_path', 'C:/VeriVek/TaskEnv/venv')
+        success = create_task_environment(venv_path=venv_path)
+        return jsonify({
+            'success': success,
+            'message': '虚拟环境创建成功' if success else '虚拟环境创建失败'
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/dependencies/pytorch', methods=['POST'])
+@require_auth(roles=['admin'])
+def api_install_pytorch():
+    """在训练任务虚拟环境中安装 PyTorch（仅管理员）"""
+    try:
+        venv_path = _app_config.get('training', {}).get('venv_path', 'C:/VeriVek/TaskEnv/venv')
+        success = install_pytorch(venv_path=venv_path)
+        return jsonify({
+            'success': success,
+            'message': 'PyTorch 安装成功' if success else 'PyTorch 安装失败'
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/dependencies/venv_path', methods=['POST'])
+@require_auth(roles=['admin'])
+def api_set_venv_path():
+    """管理员：修改训练任务虚拟环境路径"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '请求体不能为空'}), 400
+
+        new_path = data.get('venv_path', '').strip()
+        if not new_path:
+            return jsonify({'success': False, 'error': '虚拟环境路径不能为空'}), 400
+
+        # 确保 training 配置段存在
+        if 'training' not in _app_config:
+            _app_config['training'] = {}
+        _app_config['training']['venv_path'] = new_path
+
+        # 写回 config.json
+        with open(_config_path, 'w', encoding='utf-8') as f:
+            json.dump(_app_config, f, indent=4, ensure_ascii=False)
+
+        # 重新初始化 TrainingManager
+        global training_manager
+        training_manager = TrainingManager(db_client, venv_path=new_path)
+
+        return jsonify({
+            'success': True,
+            'venv_path': new_path,
+            'message': '虚拟环境路径已更新'
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

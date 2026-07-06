@@ -1,23 +1,24 @@
 import os
+import sys
 import subprocess
 from pathlib import Path
 
-def create_task_environment(base_path="C:/VeriVek/TaskEnv"):
-    task_env_path = Path(base_path)
-    venv_path = task_env_path / "venv"
+def create_task_environment(venv_path="C:/VeriVek/TaskEnv/venv"):
+    venv = Path(venv_path)
+    base_path = venv.parent
 
     # 创建基础文件夹
-    print(f"创建文件夹: {task_env_path}")
-    task_env_path.mkdir(parents=True, exist_ok=True)
+    print(f"创建文件夹: {base_path}")
+    base_path.mkdir(parents=True, exist_ok=True)
 
     # 创建虚拟环境
-    if venv_path.exists():
-        print(f"虚拟环境已存在: {venv_path}")
+    if venv.exists():
+        print(f"虚拟环境已存在: {venv}")
     else:
-        print(f"创建 Python 虚拟环境: {venv_path}")
+        print(f"创建 Python 虚拟环境: {venv}")
         try:
             subprocess.run(
-                ["python", "-m", "venv", str(venv_path)],
+                [sys.executable, "-m", "venv", str(venv)],
                 check=True,
                 capture_output=True,
                 text=True
@@ -30,10 +31,10 @@ def create_task_environment(base_path="C:/VeriVek/TaskEnv"):
     # 显示激活命令
     print("\n" + "=" * 50)
     print("环境准备完成！")
-    print(f"路径: {task_env_path}")
+    print(f"路径: {base_path}")
     print("\n激活虚拟环境:")
-    print(f"  Windows CMD:    {venv_path}\\Scripts\\activate.bat")
-    print(f"  Windows PowerShell: {venv_path}\\Scripts\\Activate.ps1")
+    print(f"  Windows CMD:    {venv}\\Scripts\\activate.bat")
+    print(f"  Windows PowerShell: {venv}\\Scripts\\Activate.ps1")
     print("=" * 50)
 
     return True

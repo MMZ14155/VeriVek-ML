@@ -92,10 +92,11 @@ class DbClient:
     def _start_minio(self):
         minio_cfg = self.cfg['minio']
         timeout = minio_cfg['timeout']
+        script_path = os.path.join(os.path.dirname(__file__), "start_minio.bat")
 
         try:
             proc = subprocess.Popen(
-                ["start_minio.bat"],
+                [script_path],
                 creationflags=subprocess.CREATE_NEW_CONSOLE,
                 shell=True
             )
