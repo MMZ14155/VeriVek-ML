@@ -31,10 +31,6 @@ add_custom_command(TARGET hardware_monitor POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:hardware_monitor>/lib$<TARGET_FILE_BASE_NAME:hardware_monitor>.dll.a"
 )
 
-add_custom_command(TARGET hardware_monitor POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:hardware_monitor>" "${CMAKE_CURRENT_SOURCE_DIR}/../../Training/$<TARGET_FILE_NAME:hardware_monitor>"
-)
-
 target_include_directories(hardware_monitor PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/internal
     ${CMAKE_CURRENT_SOURCE_DIR}/api

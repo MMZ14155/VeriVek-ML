@@ -1,0 +1,58 @@
+(* 顶层程序 *)
+Program = { Network | Block } ;
+
+(* 网络定义 *)
+Network = "network", Identifier, "{", { Statement }, "}" ;
+
+(* 可复用子网络 *)
+Block = "block", Identifier, [ "(", ParamList, ")" ], "{", { Statement }, "}" ;
+
+(* 参数列表：形参或实参 *)
+ParamList = Identifier, { ",", Identifier } ;
+
+(* 语句 *)
+Statement = InputStmt | AssignStmt | ReturnStmt | ExprStmt ;
+
+(* 输入声明 *)
+InputStmt = "input", [ Identifier, "=" ], Shape ;
+
+(* 赋值 *)
+AssignStmt = Identifier, "=", Expression ;
+
+(* 返回 *)
+ReturnStmt = "return", Identifier, { ",", Identifier } ;
+
+(* 顺序模式中的无接收表达式语句 *)
+ExprStmt = Expression ;
+
+(* 表达式 *)
+Expression = LayerOrId, { "->", LayerCall } ;
+
+(* 标识符或层调用 *)
+LayerOrId = Identifier | LayerCall ;
+
+(* 层调用：参数 + 可选显式输入 *)
+LayerCall = Identifier, "(", [ ArgList ], ")", [ "(", InputList, ")" ] ;
+
+(* 参数列表 *)
+ArgList = Argument, { ",", Argument } ;
+
+Argument = Value | Identifier, "=", Value ;
+
+(* 显式输入列表 *)
+InputList = Expression, { ",", Expression } ;
+
+(* 值：字面量或形状 *)
+Value = Integer | Float | Bool | String | Shape ;
+
+(* 形状 *)
+Shape = "(", [ Integer, { ",", Integer } ], ")" ;
+
+(* 基本词法 *)
+Identifier = Letter, { Letter | Digit | "_" } ;
+Integer = [ "-" ], Digit, { Digit } ;
+Float = Integer, ".", Digit, { Digit } ;
+Bool = "true" | "false" ;
+String = """", { any character except """" }, """" ;
+Letter = "a".."z" | "A".."Z" ;
+Digit = "0".."9" ;
