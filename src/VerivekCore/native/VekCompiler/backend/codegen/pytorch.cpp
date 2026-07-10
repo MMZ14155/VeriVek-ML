@@ -92,8 +92,16 @@ namespace vek {
                 int out_ch = get_int_param(node, "out_channels", 1);
                 int k = get_int_param(node, "kernel_size", 1);
                 int s = get_int_param(node, "stride", 1);
-                std::string pad_str = get_string_param(node, "pad", "0");
-                int pad = pad_str == "same" ? (k - 1) / 2 : std::stoi(pad_str);
+                int pad = 0;
+                auto pad_it = node.params.find("pad");
+                if (pad_it != node.params.end()) {
+                    if (std::holds_alternative<int>(pad_it->second)) {
+                        pad = std::get<int>(pad_it->second);
+                    } else if (std::holds_alternative<std::string>(pad_it->second)) {
+                        std::string pad_str = std::get<std::string>(pad_it->second);
+                        pad = pad_str == "same" ? (k - 1) / 2 : std::stoi(pad_str);
+                    }
+                }
                 bool bias = get_bool_param(node, "bias", true);
                 init << "        self." << name << " = nn.Conv2d(" << in_ch << ", " << out_ch << ", " << k
                     << ", stride=" << s << ", padding=" << pad << ", bias=" << py_bool(bias) << ")\n";
@@ -157,6 +165,51 @@ namespace vek {
                 forward << "        " << out_var << " = torch.sigmoid(" << input_exprs[0] << ")\n";
             } else if (type == "gelu") {
                 forward << "        " << out_var << " = F.gelu(" << input_exprs[0] << ")\n";
+            } else if (type == "leaky_relu") {
+                double negative_slope = get_double_param(node, "negative_slope", 0.01);
+                forward << "        " << out_var << " = F.leaky_relu(" << input_exprs[0] << ", negative_slope=" << negative_slope << ")\n";
+            } else if (type == "softmax") {
+                int dim = get_int_param(node, "dim", 1);
+                forward << "        " << out_var << " = F.softmax(" << input_exprs[0] << ", dim=" << dim << ")\n";
+            } else if (type == "layernorm") {
+                int idx = ++layer_counts["layernorm"];
+                std::string name = make_layer_name("layernorm", idx);
+                std::vector<int> normalized_shape;
+                auto it = node.params.find("normalized_shape");
+                if (it != node.params.end() && std::holds_alternative<std::vector<int>>(it->second)) {
+                    normalized_shape = std::get<std::vector<int>>(it->second);
+                }
+                double eps = get_double_param(node, "eps", 1e-5);
+                bool elementwise_affine = get_bool_param(node, "elementwise_affine", true);
+                init << "        self." << name << " = nn.LayerNorm(";
+                if (normalized_shape.size() == 1) {
+                    init << normalized_shape[0];
+                } else {
+                    init << "(";
+                    for (size_t i = 0; i < normalized_shape.size(); ++i) {
+                        if (i > 0) init << ", ";
+                        init << normalized_shape[i];
+                    }
+                    init << ")";
+                }
+                init << ", eps=" << eps << ", elementwise_affine=" << py_bool(elementwise_affine) << ")\n";
+                forward << "        " << out_var << " = self." << name << "(" << input_exprs[0] << ")\n";
+            } else if (type == "view") {
+                std::vector<int> shape;
+                auto it = node.params.find("shape");
+                if (it != node.params.end() && std::holds_alternative<std::vector<int>>(it->second)) {
+                    shape = std::get<std::vector<int>>(it->second);
+                }
+                std::ostringstream shape_str;
+                for (size_t i = 0; i < shape.size(); ++i) {
+                    if (i > 0) shape_str << ", ";
+                    if (shape[i] == -1) {
+                        shape_str << input_exprs[0] << ".size(0)";
+                    } else {
+                        shape_str << shape[i];
+                    }
+                }
+                forward << "        " << out_var << " = " << input_exprs[0] << ".view(" << shape_str.str() << ")\n";
             } else if (type == "add") {
                 forward << "        " << out_var << " = torch.add(";
                 for (size_t i = 0; i < input_exprs.size(); ++i) {

@@ -245,34 +245,23 @@ namespace vek {
     std::vector<AstArgument> Parser::parse_argument_list() {
         std::vector<AstArgument> args;
         while (current_.type != TokenType::RParen && current_.type != TokenType::Eof) {
-            // 命名参数检测：标识符后跟 '='
-            if (current_.type == TokenType::Identifier) {
-                // 无法预读下一个 token，因此保存当前 token、前进后检查是否为 '='。
-                std::string name = current_.text;
-                Token saved = current_;
-                advance();
-                if (consume(TokenType::Equals)) {
-                    AstArgument arg;
-                    arg.name = name;
-                    arg.value = parse_value();
-                    if (!error_.empty()) return {};
-                    args.push_back(std::move(arg));
-                    if (current_.type == TokenType::Comma) {
-                        advance();
-                    } else if (current_.type == TokenType::RParen) {
-                        break;
-                    } else {
-                        if (error_.empty()) error_ = "expected , or ) in argument list at line " + std::to_string(current_.line);
-                        return {};
-                    }
-                    continue;
-                } else {
-                    // 不是命名参数：恢复并作为位置参数值解析。由于无法预读，advance 已消费下一个 token，当前实现直接返回错误（标识符应作为 bool/string/enum 值）。
-                    if (error_.empty()) error_ = "unexpected identifier '" + name + "' at line " + std::to_string(saved.line);
-                    return {};
+            // 强制命名参数：标识符后必须跟 '='
+            if (current_.type != TokenType::Identifier) {
+                if (error_.empty()) {
+                    error_ = "expected named argument (identifier=...) at line " + std::to_string(current_.line);
                 }
+                return {};
+            }
+            std::string name = current_.text;
+            advance();
+            if (!consume(TokenType::Equals)) {
+                if (error_.empty()) {
+                    error_ = "expected '=' after argument name '" + name + "' at line " + std::to_string(current_.line);
+                }
+                return {};
             }
             AstArgument arg;
+            arg.name = name;
             arg.value = parse_value();
             if (!error_.empty()) return {};
             args.push_back(std::move(arg));
@@ -281,7 +270,9 @@ namespace vek {
             } else if (current_.type == TokenType::RParen) {
                 break;
             } else {
-                if (error_.empty()) error_ = "expected , or ) in argument list at line " + std::to_string(current_.line);
+                if (error_.empty()) {
+                    error_ = "expected , or ) in argument list at line " + std::to_string(current_.line);
+                }
                 return {};
             }
         }

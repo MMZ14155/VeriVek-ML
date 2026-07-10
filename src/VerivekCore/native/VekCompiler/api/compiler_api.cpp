@@ -1,9 +1,10 @@
 #include "compiler_api.h"
 
-#include "fgraph_to_vek.h"
+#include "json_to_mdlspec.h"
+#include "mdlspec_to_ir.h"
 #include "ir.h"
+#include "ir_analysis.h"
 #include "ir_builder.h"
-#include "json_to_fgraph.h"
 #include "lexer.h"
 #include "parser.h"
 #include "pytorch.h"
@@ -44,7 +45,7 @@ namespace vek {
         }
 
         extern "C" {
-            const char* vek_compile(const char* vek_source, const char* target) {
+            const char* vk_compile_vek(const char* vek_source, const char* target) {
                 g_result_string.clear();
                 g_error_string.clear();
 
@@ -85,7 +86,37 @@ namespace vek {
                 }
             }
 
-            const char* vek_graph_to_vek(const char* graph_json) {
+            const char* vk_compile_graph(const char* graph_json, const char* target) {
+                g_result_string.clear();
+                g_error_string.clear();
+                if (!graph_json) {
+                    g_error_string = "null graph json";
+                    return nullptr;
+                }
+                if (!target) {
+                    g_error_string = "null target string";
+                    return nullptr;
+                }
+                try {
+                    ModelSpec spec = json_to_mdlspec(graph_json);
+                    Graph ir = mdlspec_to_ir(spec);
+                    const std::string target_lower = to_lower(target);
+                    g_result_string = compile_graph(ir, target_lower);
+                    return g_result_string.c_str();
+                } catch (const std::exception& e) {
+                    g_error_string = std::string("compile graph error: ") + e.what();
+                    return nullptr;
+                } catch (...) {
+                    g_error_string = "unknown compile graph error";
+                    return nullptr;
+                }
+            }
+
+            const char* vk_get_last_error(void) {
+                return g_error_string.c_str();
+            }
+
+            const char* vk_analyze_params(const char* graph_json) {
                 g_result_string.clear();
                 g_error_string.clear();
                 if (!graph_json) {
@@ -93,20 +124,17 @@ namespace vek {
                     return nullptr;
                 }
                 try {
-                    FrontendGraph graph = json_to_frontend_graph(graph_json);
-                    g_result_string = frontend_graph_to_vek(graph);
+                    ModelSpec spec = json_to_mdlspec(graph_json);
+                    Graph ir = mdlspec_to_ir(spec);
+                    g_result_string = analyze_params_to_json(ir);
                     return g_result_string.c_str();
                 } catch (const std::exception& e) {
-                    g_error_string = std::string("graph to vek error: ") + e.what();
+                    g_error_string = std::string("analyze params error: ") + e.what();
                     return nullptr;
                 } catch (...) {
-                    g_error_string = "unknown graph to vek error";
+                    g_error_string = "unknown analyze params error";
                     return nullptr;
                 }
-            }
-
-            const char* vek_get_last_error(void) {
-                return g_error_string.c_str();
             }
         }
     }

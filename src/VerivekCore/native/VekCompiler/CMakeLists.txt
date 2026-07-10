@@ -9,11 +9,13 @@ set(CMAKE_C_COMPILER gcc)
 set(CMAKE_CXX_COMPILER g++)
 
 set(VEK_SOURCES
-    frontend/json_to_fgraph.cpp
-    frontend/fgraph_to_vek.cpp
-    frontend/vek_to_fgraph.cpp
+    frontend/json_to_mdlspec.cpp
+    frontend/mdlspec_to_ir.cpp
+    frontend/vek_to_mdlspec.cpp
 
     middle/ir.cpp
+    middle/ir_optimize.cpp
+    middle/ir_analysis.cpp
     middle/lexer.cpp
     middle/parser.cpp
     middle/ir_builder.cpp
@@ -24,11 +26,13 @@ set(VEK_SOURCES
 )
 
 set(VEK_HEADERS
-    frontend/json_to_fgraph.h
-    frontend/fgraph_input.h
-    frontend/fgraph_to_vek.h
-    frontend/vek_to_fgraph.h
+    frontend/json_to_mdlspec.h
+    frontend/mdlspec.h
+    frontend/mdlspec_to_ir.h
+    frontend/vek_to_mdlspec.h
     middle/ir.h
+    middle/ir_optimize.h
+    middle/ir_analysis.h
     middle/lexer.h
     middle/parser.h
     middle/ir_builder.h

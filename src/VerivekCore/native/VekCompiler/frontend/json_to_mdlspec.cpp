@@ -1,4 +1,4 @@
-#include "json_to_fgraph.h"
+#include "json_to_mdlspec.h"
 
 #include <cctype>
 #include <stdexcept>
@@ -10,9 +10,9 @@ namespace vek {
         public:
             explicit JsonParser(const std::string& s) : s_(s), pos_(0) {}
 
-            FrontendGraph parse_graph() {
-                FrontendGraph graph;
-                graph.name = "Model";
+            ModelSpec parse_graph() {
+                ModelSpec spec;
+                spec.name = "Model";
                 skip_ws();
                 expect('{');
                 while (!peek('}')) {
@@ -21,9 +21,9 @@ namespace vek {
                     expect(':');
                     skip_ws();
                     if (key == "nodes") {
-                        parse_nodes(graph);
+                        parse_nodes(spec);
                     } else if (key == "connections") {
-                        parse_connections(graph);
+                        parse_connections(spec);
                     } else {
                         skip_value();
                     }
@@ -31,7 +31,7 @@ namespace vek {
                     if (peek(',')) consume(',');
                 }
                 expect('}');
-                return graph;
+                return spec;
             }
 
         private:
@@ -189,7 +189,7 @@ namespace vek {
                 return props;
             }
 
-            void parse_nodes(FrontendGraph& graph) {
+            void parse_nodes(ModelSpec& spec) {
                 expect('[');
                 while (!peek(']')) {
                     expect('{');
@@ -210,15 +210,15 @@ namespace vek {
                     }
                     expect('}');
 
-                    FrontendNode node;
+                    ModelSpecNode node;
                     node.id = std::to_string(id);
                     node.type = type;
                     node.params = props;
                     node.outputs = {node.id};
-                    graph.nodes.push_back(std::move(node));
+                    spec.nodes.push_back(std::move(node));
 
                     if (type == "Input") {
-                        FrontendTensor ft;
+                        ModelSpecTensor ft;
                         ft.name = std::to_string(id);
                         auto it = props.find("shape");
                         if (it != props.end() && std::holds_alternative<std::vector<int>>(it->second)) {
@@ -227,11 +227,11 @@ namespace vek {
                             if (!shape.empty()) shape.erase(shape.begin());
                             ft.shape = std::move(shape);
                         }
-                        graph.inputs.push_back(std::move(ft));
+                        spec.inputs.push_back(std::move(ft));
                     } else if (type == "Output") {
-                        FrontendTensor ft;
+                        ModelSpecTensor ft;
                         ft.name = std::to_string(id);
-                        graph.outputs.push_back(std::move(ft));
+                        spec.outputs.push_back(std::move(ft));
                     }
 
                     skip_ws();
@@ -240,7 +240,7 @@ namespace vek {
                 expect(']');
             }
 
-            void parse_connections(FrontendGraph& graph) {
+            void parse_connections(ModelSpec& spec) {
                 expect('[');
                 while (!peek(']')) {
                     expect('{');
@@ -259,7 +259,7 @@ namespace vek {
                     }
                     expect('}');
 
-                    for (auto& node : graph.nodes) {
+                    for (auto& node : spec.nodes) {
                         if (node.id == std::to_string(to_id)) {
                             node.inputs.push_back(std::to_string(from_id));
                         }
@@ -295,33 +295,44 @@ namespace vek {
             if (type == "Conv2d") return "conv2d";
             if (type == "MaxPool2d") return "maxpool2d";
             if (type == "AvgPool2d") return "avgpool2d";
+            if (type == "AdaptiveAvgPool2d") return "adaptive_avgpool2d";
             if (type == "Linear") return "dense";
             if (type == "ReLU") return "relu";
             if (type == "Tanh") return "tanh";
             if (type == "Sigmoid") return "sigmoid";
+            if (type == "Softmax") return "softmax";
             if (type == "GELU") return "gelu";
+            if (type == "LeakyReLU") return "leaky_relu";
             if (type == "Dropout") return "dropout";
             if (type == "BatchNorm2d") return "batchnorm2d";
+            if (type == "LayerNorm") return "layernorm";
             if (type == "Flatten") return "flatten";
-            if (type == "Add") return "add";
-            if (type == "Concat") return "concat";
+            if (type == "View") return "view";
+            if (type == "Embedding") return "embedding";
             if (type == "LSTM") return "lstm";
             if (type == "GRU") return "gru";
-            if (type == "Embedding") return "embedding";
+            if (type == "Add") return "add";
+            if (type == "Concat") return "concat";
             return type;
         }
 
         std::map<std::string, ParamValue> remap_params(const std::string& type, std::map<std::string, ParamValue> props) {
             std::map<std::string, ParamValue> out;
             for (auto& [key, value] : props) {
-                if (key == "shape") continue;
+                if (key == "shape") {
+                    // View 的 shape 是计算所必需的，Input/Output/Flatten 的 shape 不需要
+                    if (type == "View" || type == "view") {
+                        out[key] = std::move(value);
+                    }
+                    continue;
+                }
                 if (type == "flatten" && key == "end_dim") {
                     // end_dim=-1 表示展平到末尾，Vek 中省略即可
                     if (std::holds_alternative<int>(value) && std::get<int>(value) == -1) continue;
                 }
                 out[key] = std::move(value);
             }
-            if (type == "Input" || type == "Output") return out;
+            if (type == "Input" || type == "Output" || type == "input" || type == "output") return out;
 
             if (type == "Conv2d" || type == "MaxPool2d" || type == "AvgPool2d") {
                 if (out.count("padding")) {
@@ -333,15 +344,15 @@ namespace vek {
         }
     }
 
-    FrontendGraph json_to_frontend_graph(const std::string& json) {
+    ModelSpec json_to_mdlspec(const std::string& json) {
         JsonParser parser(json);
-        FrontendGraph graph = parser.parse_graph();
+        ModelSpec spec = parser.parse_graph();
 
-        for (auto& node : graph.nodes) {
-            node.type = type_to_vek(node.type);
+        for (auto& node : spec.nodes) {
             node.params = remap_params(node.type, std::move(node.params));
+            node.type = type_to_vek(node.type);
         }
 
-        return graph;
+        return spec;
     }
 }

@@ -5,6 +5,11 @@
 
 namespace vek {
     namespace {
+        int get_int_param(const Node& node, const std::string& key, int default_value);
+        double get_double_param(const Node& node, const std::string& key, double default_value);
+        std::string get_string_param(const Node& node, const std::string& key, const std::string& default_value);
+        std::vector<int> view_output_shape(const std::vector<int>& input_shape, const Node& node);
+
         int get_int_param(const Node& node, const std::string& key, int default_value) {
             auto it = node.params.find(key);
             if (it == node.params.end()) return default_value;
@@ -34,12 +39,15 @@ namespace vek {
             int out_channels = get_int_param(node, "out_channels", 0);
             int kernel = get_int_param(node, "kernel_size", 1);
             int stride = get_int_param(node, "stride", 1);
-            std::string pad_str = get_string_param(node, "pad", "0");
             int pad = 0;
-            if (pad_str == "same") {
-                pad = (kernel - 1) / 2;
-            } else {
-                pad = std::stoi(pad_str);
+            auto pad_it = node.params.find("pad");
+            if (pad_it != node.params.end()) {
+                if (std::holds_alternative<int>(pad_it->second)) {
+                    pad = std::get<int>(pad_it->second);
+                } else if (std::holds_alternative<std::string>(pad_it->second)) {
+                    std::string pad_str = std::get<std::string>(pad_it->second);
+                    pad = pad_str == "same" ? (kernel - 1) / 2 : std::stoi(pad_str);
+                }
             }
             int dilation = get_int_param(node, "dilation", 1);
             int oh = (h + 2 * pad - dilation * (kernel - 1) - 1) / stride + 1;
@@ -78,6 +86,34 @@ namespace vek {
             return {total};
         }
 
+        std::vector<int> view_output_shape(const std::vector<int>& input_shape, const Node& node) {
+            std::vector<int> shape;
+            auto it = node.params.find("shape");
+            if (it != node.params.end() && std::holds_alternative<std::vector<int>>(it->second)) {
+                shape = std::get<std::vector<int>>(it->second);
+            }
+            if (shape.empty()) return input_shape;
+
+            int total = 1;
+            for (int d : input_shape) total *= d;
+
+            int minus_one_idx = -1;
+            int known_product = 1;
+            for (size_t i = 0; i < shape.size(); ++i) {
+                if (shape[i] == -1) {
+                    minus_one_idx = static_cast<int>(i);
+                } else {
+                    known_product *= shape[i];
+                }
+            }
+
+            std::vector<int> out = shape;
+            if (minus_one_idx >= 0) {
+                out[minus_one_idx] = total / known_product;
+            }
+            return out;
+        }
+
         std::vector<int> rnn_output_shape(const std::vector<int>& input_shape, const Node& node) {
             if (input_shape.empty()) return {};
             int hidden = get_int_param(node, "hidden_size", 0);
@@ -110,8 +146,14 @@ namespace vek {
         if (t == "dense" || t == "linear") return dense_output_shape(input_shape, node);
         if (t == "flatten") return flatten_output_shape(input_shape);
         if (t == "dropout" || t == "relu" || t == "tanh" || t == "sigmoid" || t == "gelu" ||
-            t == "batchnorm2d") {
+            t == "leaky_relu" || t == "softmax" || t == "batchnorm2d") {
             return input_shape;
+        }
+        if (t == "layernorm") {
+            return input_shape;
+        }
+        if (t == "view") {
+            return view_output_shape(input_shape, node);
         }
         if (t == "lstm" || t == "gru") return rnn_output_shape(input_shape, node);
         if (t == "add" || t == "concat") {
@@ -128,7 +170,7 @@ namespace vek {
     void infer_node_params(Node& node, const std::vector<const Tensor*>& inputs) {
         if (inputs.empty() || !inputs[0]) return;
         const std::vector<int>& in_shape = inputs[0]->shape;
-        if (node.type == "conv2d" && in_shape.size() >= 3) {
+        if (node.type == "conv2d" && !in_shape.empty()) {
             node.params["in_channels"] = in_shape[0];
         }
         if ((node.type == "dense" || node.type == "linear") && !in_shape.empty()) {
