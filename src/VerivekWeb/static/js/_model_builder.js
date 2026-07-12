@@ -143,29 +143,6 @@ async function fetchGeneratedCode() {
     }
 }
 
-async function validateGraph() {
-    try {
-        const response = await fetch('/api/architecture/validate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ graph_structure: exportGraph() })
-        });
-
-        const data = await response.json();
-
-        if (!data.valid) {
-            showValidationErrors(data.errors);
-        } else {
-            clearValidationErrors();
-        }
-
-        return data.valid;
-    } catch (error) {
-        console.error('验证失败:', error);
-        return true; // 网络错误时不阻断操作
-    }
-}
-
 // ==================== 拖拽系统 ====================
 function initDragAndDrop() {
     const componentItems = document.querySelectorAll('.component-item');
@@ -212,9 +189,6 @@ function createNode(type, x, y) {
     renderNode(node);
     updateStats();
     selectNode(node.id);
-
-    // 自动验证
-    debounceValidate();
     updateCanvasBounds();
 
     return node;
@@ -317,7 +291,6 @@ function deleteNode(nodeId) {
 
     drawConnections();
     updateStats();
-    debounceValidate();
     updateCanvasBounds();
 }
 
@@ -428,7 +401,6 @@ function startConnection(nodeId, portName, portType, e) {
                     connections.push({ id: ++connectionIdCounter, from, to });
                     drawConnections();
                     updateStats();
-                    debounceValidate();
                 }
             }
         }
@@ -468,7 +440,6 @@ function drawConnections() {
             connections = connections.filter(c => c.id !== conn.id);
             drawConnections();
             updateStats();
-            debounceValidate();
         });
 
         svg.appendChild(path);
@@ -914,15 +885,6 @@ function toggleParamsDetails() {
     }
 }
 
-function showValidationErrors(errors) {
-    // 高亮显示错误节点或显示提示
-    console.warn('架构验证错误:', errors);
-}
-
-function clearValidationErrors() {
-    // 清除错误提示
-}
-
 // ==================== 架构加载 ====================
 function toggleArchDropdown() {
     const menu = document.getElementById('arch-menu');
@@ -1020,7 +982,6 @@ async function loadArchitecture(name) {
         updateStats();
         updatePropertiesPanel();
         updateCanvasBounds();
-        debounceValidate();
 
         // 如果在代码模式，自动重新生成代码
         if (!document.getElementById('code-mode').classList.contains('hidden')) {
@@ -1034,12 +995,6 @@ async function loadArchitecture(name) {
 }
 
 // 防抖函数，避免频繁请求后端
-let debounceTimer;
-function debounceValidate() {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => validateGraph(), 1000);
-}
-
 function debounceGenerate() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => fetchGeneratedCode(), 500);
@@ -1166,10 +1121,12 @@ function loadAiSettingsToForm() {
     const providerSelect = document.getElementById('ai-provider');
     const customUrlInput = document.getElementById('ai-custom-url');
     const customUrlWrapper = document.getElementById('ai-custom-url-wrapper');
+    const modelInput = document.getElementById('ai-model');
 
     if (apiKeyInput) apiKeyInput.value = settings.apiKey || '';
-    if (providerSelect) providerSelect.value = settings.provider || 'openai';
+    if (providerSelect) providerSelect.value = settings.provider || 'deepseek';
     if (customUrlInput) customUrlInput.value = settings.customUrl || '';
+    if (modelInput) modelInput.value = settings.model || 'deepseek-v4-flash';
 
     if (customUrlWrapper) {
         if (settings.provider === 'custom') {
@@ -1180,40 +1137,201 @@ function loadAiSettingsToForm() {
     }
 }
 
+// 全局 AI 对话历史
+let aiMessageHistory = [];
+
 function updateAiStatus() {
     const settings = loadAiSettings();
     const statusEl = document.getElementById('ai-api-status');
     const inputEl = document.getElementById('ai-chat-input');
-    const sendBtn = inputEl?.parentElement?.querySelector('button');
+    const sendBtn = document.getElementById('ai-send-btn');
 
     if (!statusEl) return;
 
-    if (settings.apiKey) {
+    const isReady = !!settings.apiKey;
+
+    if (isReady) {
         statusEl.innerHTML = `
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
             <span>已配置 (${getProviderLabel(settings.provider)})</span>
         `;
-        if (inputEl) {
-            inputEl.placeholder = '输入消息与 AI 对话...';
-            inputEl.classList.remove('cursor-not-allowed');
-        }
     } else {
         statusEl.innerHTML = `
             <span class="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
             <span>未配置 API Key</span>
         `;
-        if (inputEl) {
-            inputEl.placeholder = '请先配置 API Key...';
-            inputEl.classList.add('cursor-not-allowed');
-        }
     }
+
+    if (inputEl) {
+        inputEl.placeholder = isReady ? '输入消息与 AI 对话...' : '请先配置 API Key...';
+        inputEl.classList.toggle('cursor-not-allowed', !isReady);
+        inputEl.disabled = !isReady;
+    }
+
+    if (sendBtn) {
+        sendBtn.classList.toggle('cursor-not-allowed', !isReady);
+        sendBtn.classList.toggle('text-gray-600', !isReady);
+        sendBtn.classList.toggle('text-indigo-400', isReady);
+        sendBtn.disabled = !isReady;
+    }
+}
+
+function appendAiMessage(role, content, isStreaming = false) {
+    const container = document.getElementById('ai-chat-messages');
+    if (!container) return;
+
+    const isUser = role === 'user';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'flex items-start space-x-2' + (isUser ? ' flex-row-reverse space-x-reverse' : '');
+
+    const avatar = document.createElement('div');
+    avatar.className = 'w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 ' + (isUser ? 'bg-gray-600' : 'bg-gradient-to-br from-indigo-500 to-purple-600');
+    avatar.innerHTML = isUser
+        ? '<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>'
+        : '<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'rounded-xl p-3 text-sm text-gray-300 max-w-full ' + (isUser ? 'bg-indigo-600/30 text-indigo-100' : 'bg-white/5');
+    bubble.style.whiteSpace = 'pre-wrap';
+    bubble.textContent = content;
+
+    wrapper.appendChild(avatar);
+    wrapper.appendChild(bubble);
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+
+    return bubble;
+}
+
+function handleAiInputKey(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendAiMessage();
+    }
+}
+
+async function sendAiMessage() {
+    const settings = loadAiSettings();
+    if (!settings.apiKey) {
+        alert('请先配置 API Key');
+        return;
+    }
+
+    const inputEl = document.getElementById('ai-chat-input');
+    const content = inputEl.value.trim();
+    if (!content) return;
+
+    inputEl.value = '';
+    appendAiMessage('user', content);
+    aiMessageHistory.push({ role: 'user', content });
+
+    const aiBubble = appendAiMessage('assistant', '思考中...');
+
+    try {
+        const response = await fetch('/api/ai-assistant/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_key: settings.apiKey,
+                provider: settings.provider,
+                base_url: settings.customUrl || undefined,
+                model: settings.model || undefined,
+                messages: aiMessageHistory.slice(-10), // 保留最近10轮上下文
+                graph_structure: exportGraph(),
+                current_code: document.getElementById('code-editor')?.value || '',
+                task: 'chat'
+            })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            aiBubble.textContent = data.reply;
+            aiMessageHistory.push({ role: 'assistant', content: data.reply });
+        } else {
+            aiBubble.textContent = 'AI 回复失败：' + (data.error || '未知错误');
+        }
+    } catch (error) {
+        aiBubble.textContent = '网络错误：' + error.message;
+    }
+}
+
+async function aiQuickAction(action) {
+    const settings = loadAiSettings();
+    if (!settings.apiKey) {
+        alert('请先配置 API Key');
+        return;
+    }
+
+    const label = action === 'explain' ? '解释架构' : '优化建议';
+    appendAiMessage('user', `请帮我${label}`);
+    const aiBubble = appendAiMessage('assistant', '分析中...');
+
+    try {
+        const response = await fetch('/api/ai-assistant/quick-action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_key: settings.apiKey,
+                provider: settings.provider,
+                base_url: settings.customUrl || undefined,
+                model: settings.model || undefined,
+                action: action,
+                graph_structure: exportGraph(),
+                current_code: document.getElementById('code-editor')?.value || ''
+            })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            aiBubble.textContent = data.reply;
+            aiMessageHistory.push({ role: 'assistant', content: data.reply });
+        } else {
+            aiBubble.textContent = 'AI 回复失败：' + (data.error || '未知错误');
+        }
+    } catch (error) {
+        aiBubble.textContent = '网络错误：' + error.message;
+    }
+}
+
+function saveAiSettings() {
+    const apiKey = document.getElementById('ai-api-key').value.trim();
+    const provider = document.getElementById('ai-provider').value;
+    const customUrl = document.getElementById('ai-custom-url').value.trim();
+    const model = document.getElementById('ai-model').value.trim();
+
+    const settings = {
+        apiKey: apiKey,
+        provider: provider,
+        customUrl: customUrl,
+        model: model
+    };
+
+    try {
+        localStorage.setItem('verivek_ai_settings', JSON.stringify(settings));
+        updateAiStatus();
+        closeAiSettings();
+    } catch (e) {
+        alert('保存失败：浏览器可能禁用了本地存储');
+    }
+}
+
+function clearAiSettings() {
+    if (!confirm('确定要清除所有 AI 助手配置吗？')) return;
+
+    localStorage.removeItem('verivek_ai_settings');
+    document.getElementById('ai-api-key').value = '';
+    document.getElementById('ai-provider').value = 'deepseek';
+    document.getElementById('ai-custom-url').value = '';
+    document.getElementById('ai-custom-url-wrapper').classList.add('hidden');
+    document.getElementById('ai-model').value = 'deepseek-v4-flash';
+    aiMessageHistory = [];
+    updateAiStatus();
+    closeAiSettings();
 }
 
 function getProviderLabel(provider) {
     const labels = {
-        openai: 'OpenAI',
-        anthropic: 'Claude',
-        google: 'Gemini',
+        deepseek: 'DeepSeek',
         custom: '自定义'
     };
     return labels[provider] || provider;

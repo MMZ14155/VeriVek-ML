@@ -11,7 +11,6 @@ from typing import List, Dict, Optional, Any
 from ..Database.db_client import DbClient
 from ..Database.training_repository import TrainingRepository
 
-
 class TrainingManager:
     # 全局训练进程映射: training_id -> subprocess.Popen
     _processes: Dict[int, subprocess.Popen] = {}
@@ -20,10 +19,33 @@ class TrainingManager:
     # 全局指标缓冲区: training_id -> list[dict]
     _metrics_buffer: Dict[int, List[Dict]] = {}
 
-    def __init__(self, db_client: DbClient, venv_path: str = ""):
+    def __init__(self, db_client: DbClient, venv_path: str = "", task_env_base: str = ""):
         self.db_client = db_client
         self.repo = TrainingRepository(db_client)
         self._venv_path = venv_path
+        self._task_env_base = task_env_base or self._infer_task_env_base(venv_path)
+
+    def _infer_task_env_base(self, venv_path: str) -> str:
+        """从 venv_path 推断训练环境基础目录（默认与 venv 同级的 TaskEnv 根目录）。"""
+        if venv_path:
+            venv = os.path.normpath(venv_path)
+            # 若 venv_path 本身指向 TaskEnv/venv 这类结构，则向上取两级
+            parent = os.path.dirname(venv)
+            grand_parent = os.path.dirname(parent)
+            if os.path.basename(parent).lower() in ('taskenv', 'task_env'):
+                return parent
+            if grand_parent and os.path.basename(grand_parent).lower() in ('taskenv', 'task_env'):
+                return grand_parent
+            # 否则使用 venv 的父目录作为 TaskEnv 根目录
+            return parent
+        # 最后的兜底
+        if os.name == 'nt':
+            return 'C:/VeriVek/TaskEnv'
+        return os.path.expanduser('~/VeriVek/TaskEnv')
+
+    def _task_script_dir(self, training_id: int) -> str:
+        """返回指定训练任务的脚本目录。"""
+        return os.path.join(self._task_env_base, 'trainings', str(training_id))
 
     def create_training(
             self,
@@ -64,9 +86,7 @@ class TrainingManager:
             raise ValueError(f"训练任务当前状态为 {training['status']}，无法启动")
 
         # 查找训练脚本目录
-        script_dir = os.path.join(
-            'C:/VeriVek/TaskEnv', 'trainings', str(training_id)
-        )
+        script_dir = self._task_script_dir(training_id)
         train_script = os.path.join(script_dir, 'train.py')
         if not os.path.exists(train_script):
             raise RuntimeError(f"训练脚本不存在: {train_script}")
@@ -168,9 +188,7 @@ class TrainingManager:
                         training_id, final_metrics, int(total_time)
                     )
                 # 自动保存权重到 MinIO 并关联数据库
-                script_dir = os.path.join(
-                    'C:/VeriVek/TaskEnv', 'trainings', str(training_id)
-                )
+                script_dir = self._task_script_dir(training_id)
                 last_metrics = metrics_buffer[-1] if metrics_buffer else {}
                 epoch_number = last_metrics.get('epoch', 0)
 

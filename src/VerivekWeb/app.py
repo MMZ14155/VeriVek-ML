@@ -21,6 +21,7 @@ from VerivekCore.Training.training_code_generator import TrainingCodeGenerator
 from VerivekCore.Training.gpu_monitor import get_gpu_info, get_total_usage, get_ac_status
 from VerivekCore.Training.venv_check import check_pytorch_in_venv
 from VerivekCore.Training.setup_task_env import create_task_environment, install_pytorch
+from VerivekCore.ModelManager.ai_assistant_service import AIAssistantService
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'verivek-dev-secret-key-change-in-production')
@@ -40,14 +41,17 @@ auth_service = AuthService(db_client.db_conn)
 dataset_manager = DatasetManager(db_client)
 model_manager = ModelManager(db_client)
 _training_venv_path = _app_config.get('training', {}).get('venv_path', 'C:/VeriVek/TaskEnv/venv')
+_training_task_env_base = _app_config.get('training', {}).get('task_env_base', '') or os.path.dirname(os.path.dirname(_training_venv_path.rstrip('/\\')))
 training_manager = TrainingManager(
     db_client,
-    venv_path=_training_venv_path
+    venv_path=_training_venv_path,
+    task_env_base=_training_task_env_base
 )
 
 ALLOWED_EXTENSIONS = {'py'}
 
-TRAINING_SCRIPTS_DIR = "C:/VeriVek/TaskEnv/trainings"
+# 训练脚本目录从配置的训练环境基础目录推导
+TRAINING_SCRIPTS_DIR = os.path.join(_training_task_env_base, 'trainings')
 
 def _flatten_dataset_dir(data_dir: str) -> None:
     """如果 data_dir 下只有一个子目录且不是 train/val，则将其内容提升到 data_dir"""
@@ -257,6 +261,13 @@ def api_register():
 
         try:
             user_id = auth_service.register_user(username, password, role)
+
+            # 注册成功后自动登录
+            session['user_id'] = user_id
+            session['username'] = username
+            session['role'] = role
+            session.permanent = False
+
             return jsonify({
                 'success': True,
                 'user_id': user_id,
@@ -974,6 +985,108 @@ def generate_architecture():
             'error': str(e)
         }), 400
 
+
+@app.route('/api/ai-assistant/chat', methods=['POST'])
+@require_auth()
+def ai_assistant_chat():
+    """AI 助手对话：接收前端设置和消息历史，调用 OpenAI 兼容格式 LLM。"""
+    try:
+        data = request.get_json() or {}
+
+        api_key = data.get('api_key', '').strip()
+        provider = data.get('provider', 'openai').strip().lower()
+        base_url = data.get('base_url', '').strip() or None
+        model = data.get('model', '').strip() or None
+        messages = data.get('messages', [])
+        graph_structure = data.get('graph_structure')
+        current_code = data.get('current_code')
+        task = data.get('task')
+        temperature = data.get('temperature', 0.7)
+        max_tokens = data.get('max_tokens', 2048)
+
+        if not api_key:
+            return jsonify({'success': False, 'error': '缺少 API Key，请先在设置中配置'}), 400
+
+        if not messages:
+            return jsonify({'success': False, 'error': '消息内容不能为空'}), 400
+
+        assistant = AIAssistantService(
+            api_key=api_key,
+            provider=provider,
+            base_url=base_url,
+            model=model,
+        )
+
+        result = assistant.chat(
+            messages=messages,
+            graph_structure=graph_structure,
+            current_code=current_code,
+            task=task,
+            temperature=float(temperature),
+            max_tokens=int(max_tokens),
+        )
+
+        if result.get('success'):
+            return jsonify(result)
+        return jsonify(result), 502
+
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except ImportError as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ai-assistant/quick-action', methods=['POST'])
+@require_auth()
+def ai_assistant_quick_action():
+    """AI 助手快捷操作：解释架构 / 优化建议。"""
+    try:
+        data = request.get_json() or {}
+
+        api_key = data.get('api_key', '').strip()
+        provider = data.get('provider', 'openai').strip().lower()
+        base_url = data.get('base_url', '').strip() or None
+        model = data.get('model', '').strip() or None
+        action = data.get('action', '').strip().lower()
+        graph_structure = data.get('graph_structure')
+        current_code = data.get('current_code')
+
+        if not api_key:
+            return jsonify({'success': False, 'error': '缺少 API Key'}), 400
+
+        if not graph_structure:
+            return jsonify({'success': False, 'error': '缺少架构图结构'}), 400
+
+        assistant = AIAssistantService(
+            api_key=api_key,
+            provider=provider,
+            base_url=base_url,
+            model=model,
+        )
+
+        if action == 'explain':
+            result = assistant.explain_architecture(graph_structure, current_code)
+        elif action == 'optimize':
+            result = assistant.suggest_optimization(graph_structure, current_code)
+        else:
+            return jsonify({'success': False, 'error': '未知的快捷操作类型'}), 400
+
+        if result.get('success'):
+            return jsonify(result)
+        return jsonify(result), 502
+
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/architecture/params', methods=['POST'])
 @require_auth()
 def calculate_architecture_params():
@@ -1362,6 +1475,27 @@ def get_trainings():
         import traceback
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/trainings/trends', methods=['GET'])
+@require_auth()
+def get_training_trends():
+    """获取最近 N 天训练任务趋势统计。"""
+    try:
+        days = request.args.get('days', 7, type=int)
+        if days <= 0:
+            days = 7
+
+        trends = training_manager.get_training_trends(days=days)
+        return jsonify({
+            'success': True,
+            'trends': trends
+        })
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/trainings/<int:training_id>', methods=['GET'])
 @require_auth()
