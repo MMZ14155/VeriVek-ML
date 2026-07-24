@@ -9,3 +9,4 @@ minio.exe
 minio-data
 
 configs/user_config.json
+configs/setup.json

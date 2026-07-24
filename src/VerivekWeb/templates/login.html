@@ -48,8 +48,20 @@
     </script>
     <style>
         body {
-            background: radial-gradient(ellipse at top, #1a1a2e 0%, #0a0a0f 50%, #000000 100%);
+            background: linear-gradient(160deg, #1a1a2e 0%, #131320 30%, #0d0d16 60%, #12121c 100%);
+            background-attachment: fixed;
             min-height: 100vh;
+            position: relative;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                linear-gradient(160deg, rgba(99, 102, 241, 0.18) 0%, transparent 35%),
+                linear-gradient(340deg, rgba(139, 92, 246, 0.15) 0%, transparent 35%);
+            z-index: -1;
+            pointer-events: none;
         }
         .login-card {
             background: rgba(19, 19, 31, 0.8);
@@ -100,43 +112,6 @@
         }
         .gradient-btn:hover::before {
             left: 100%;
-        }
-        .floating-shapes {
-            position: fixed;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            z-index: -1;
-            pointer-events: none;
-        }
-        .shape {
-            position: absolute;
-            filter: blur(80px);
-            opacity: 0.3;
-            animation: float 20s infinite ease-in-out;
-        }
-        .shape-1 {
-            width: 400px;
-            height: 400px;
-            background: #6366f1;
-            border-radius: 50%;
-            top: -10%;
-            left: -10%;
-            animation-delay: 0s;
-        }
-        .shape-2 {
-            width: 300px;
-            height: 300px;
-            background: #8b5cf6;
-            border-radius: 50%;
-            bottom: -10%;
-            right: -10%;
-            animation-delay: -5s;
-        }
-        @keyframes float {
-            0%, 100% { transform: translate(0, 0) scale(1); }
-            33% { transform: translate(30px, -30px) scale(1.1); }
-            66% { transform: translate(-20px, 20px) scale(0.9); }
         }
         .security-badge {
             background: rgba(16, 185, 129, 0.1);
@@ -231,11 +206,6 @@
     </style>
 </head>
 <body class="font-sans antialiased flex items-center justify-center p-4">
-    <!-- 背景浮动元素 -->
-    <div class="floating-shapes">
-        <div class="shape shape-1"></div>
-        <div class="shape shape-2"></div>
-    </div>
 
     <!-- 主登录容器 -->
     <div class="w-full max-w-md animate-slide-up">

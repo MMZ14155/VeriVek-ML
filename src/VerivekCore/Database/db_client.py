@@ -6,6 +6,10 @@ import boto3
 from botocore.exceptions import ClientError
 import psycopg2
 
+# 注意：在 setup 完成前不应对 DbClient 进行实例化，因此这里的导入不会导致循环依赖。
+from VerivekCore.Setup.setup_manager import SetupManager
+
+
 class DbClient:
     def __init__(self, cfg_dir="configs", cfg_file="config.json"):
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
@@ -73,7 +77,15 @@ class DbClient:
             return conn
         except Exception as e:
             print(f"数据库连接失败: {e}")
-            raise
+            print("尝试自动启动数据库服务...")
+            ok, err = SetupManager.start_database_if_needed(db_cfg)
+            if not ok:
+                raise RuntimeError(f"数据库启动失败: {err}") from e
+            # 服务启动成功后重连
+            conn = psycopg2.connect(**conn_params)
+            if self.verbose:
+                print(f"数据库服务已自动启动并连接成功: {conn}")
+            return conn
 
     def _create_s3_client(self):
         minio_cfg = self.cfg['minio']

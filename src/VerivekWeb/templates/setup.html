@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>首次配置 - VeriVek</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'verivek-dark': '#0a0a0f',
+                        'verivek-card': '#13131f',
+                        'verivek-accent': '#6366f1',
+                        'verivek-success': '#10b981',
+                        'verivek-warning': '#f59e0b',
+                        'verivek-danger': '#ef4444',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-in-out',
+                        'slide-up': 'slideUp 0.5s ease-out',
+                        'glow': 'glow 2s ease-in-out infinite alternate',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        glow: {
+                            '0%': { boxShadow: '0 0 5px rgba(99, 102, 241, 0.3)' },
+                            '100%': { boxShadow: '0 0 20px rgba(99, 102, 241, 0.6), 0 0 40px rgba(139, 92, 246, 0.3)' },
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        body {
+            background: linear-gradient(160deg, #1a1a2e 0%, #131320 30%, #0d0d16 60%, #12121c 100%);
+            background-attachment: fixed;
+            min-height: 100vh;
+            position: relative;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                linear-gradient(160deg, rgba(99, 102, 241, 0.18) 0%, transparent 35%),
+                linear-gradient(340deg, rgba(139, 92, 246, 0.15) 0%, transparent 35%);
+            z-index: -1;
+            pointer-events: none;
+        }
+        .setup-card {
+            background: rgba(19, 19, 31, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5),
+                        0 0 0 1px rgba(99, 102, 241, 0.1);
+        }
+        .input-field {
+            background: rgba(10, 10, 15, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+        .input-field:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+            outline: none;
+        }
+        .input-field::placeholder {
+            color: rgba(148, 163, 184, 0.5);
+        }
+        /* 隐藏数字输入框的上下箭头 */
+        .input-field::-webkit-outer-spin-button,
+        .input-field::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .input-field[type=number] {
+            -moz-appearance: textfield;
+        }
+        .input-field.error {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+        }
+        .input-field.success {
+            border-color: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+        .gradient-btn {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .gradient-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.4);
+        }
+        .gradient-btn:active {
+            transform: translateY(0);
+        }
+        .gradient-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s ease;
+        }
+        .gradient-btn:hover::before {
+            left: 100%;
+        }
+        .gradient-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .outline-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+        .outline-btn:hover {
+            border-color: #6366f1;
+            background: rgba(99, 102, 241, 0.1);
+        }
+        .loading-spinner {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .step-line {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .step-line-progress {
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+            transition: width 0.5s ease;
+        }
+        .step-dot {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+        .step-dot.active {
+            background: #6366f1;
+            border-color: #6366f1;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.5);
+        }
+        .step-dot.completed {
+            background: #10b981;
+            border-color: #10b981;
+        }
+        .step-label {
+            color: rgba(148, 163, 184, 0.7);
+            transition: all 0.3s ease;
+        }
+        .step-label.active {
+            color: #6366f1;
+        }
+        .section {
+            display: none;
+            animation: fadeIn 0.4s ease-in-out;
+        }
+        .section.active {
+            display: block;
+        }
+        .error-message {
+            color: #ef4444;
+            font-size: 0.75rem;
+            margin-top: 0.25rem;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+        }
+        .error-message.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .success-message {
+            color: #10b981;
+            font-size: 0.75rem;
+            margin-top: 0.25rem;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+        }
+        .success-message.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .status-badge {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            transition: all 0.3s ease;
+        }
+        .status-badge.success {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+        .mode-card {
+            transition: all 0.3s ease;
+        }
+        .mode-card.selected {
+            border-color: #6366f1;
+            background: rgba(99, 102, 241, 0.1);
+        }
+    </style>
+</head>
+<body class="font-sans antialiased flex items-center justify-center p-4">
+    <!-- 主容器 -->
+    <div class="w-full max-w-2xl animate-slide-up py-8">
+        <!-- 系统标识 -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl mb-4 shadow-lg animate-glow">
+                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold text-white mb-1">首次启动配置</h1>
+            <p class="text-gray-400 text-sm">配置数据库与管理员账号，完成 VeriVek 初始化</p>
+        </div>
+
+        <!-- 步骤指示器 -->
+        <div class="mb-8">
+            <div class="relative flex items-center justify-between">
+                <div class="absolute left-0 right-0 top-1/2 h-0.5 step-line -translate-y-1/2"></div>
+                <div id="stepLineProgress" class="absolute left-0 top-1/2 h-0.5 step-line-progress -translate-y-1/2" style="width: 0%"></div>
+
+                <div class="relative flex flex-col items-center">
+                    <div id="stepDot1" class="step-dot active w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium">1</div>
+                    <span id="stepLabel1" class="step-label active mt-2 text-xs">数据库配置</span>
+                </div>
+                <div class="relative flex flex-col items-center">
+                    <div id="stepDot2" class="step-dot w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium">2</div>
+                    <span id="stepLabel2" class="step-label mt-2 text-xs">管理员账号</span>
+                </div>
+                <div class="relative flex flex-col items-center">
+                    <div id="stepDot3" class="step-dot w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium">3</div>
+                    <span id="stepLabel3" class="step-label mt-2 text-xs">完成</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 配置卡片 -->
+        <div class="setup-card rounded-2xl p-8">
+            <!-- 状态提示 -->
+            <div id="setupStatus" class="status-badge rounded-lg px-4 py-3 mb-6 flex items-center space-x-3">
+                <svg id="statusIcon" class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                <span id="statusText" class="text-sm text-red-400 font-medium">系统尚未配置，请完成以下步骤</span>
+            </div>
+
+            <!-- 全局错误提示 -->
+            <div id="globalError" class="error-message text-center text-sm mb-4"></div>
+
+            <!-- 步骤 1：数据库配置 -->
+            <div id="section1" class="section active">
+                <h2 class="text-lg font-semibold text-white mb-4">数据库配置</h2>
+                <p class="text-gray-400 text-sm mb-6">请输入 PostgreSQL 数据库连接信息。配置完成后，系统将自动启动并连接数据库。</p>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2 sm:col-span-1 space-y-2">
+                        <label class="text-xs font-medium text-gray-400 uppercase tracking-wider">主机地址</label>
+                        <input type="text" id="dbHost" class="input-field w-full px-4 py-3 rounded-xl text-sm text-white placeholder-gray-500" placeholder="localhost" value="localhost">
+                        <div id="dbHostError" class="error-message">请输入主机地址</div>
+                    </div>
+                    <div class="col-span-2 sm:col-span-1 space-y-2">
+                        <label class="text-xs font-medium text-gray-400 uppercase tracking-wider">端口</label>
+                        <input type="text" id="dbPort" inputmode="numeric" pattern="[0-9]*" class="input-field w-full px-4 py-3 rounded-xl text-sm text-white placeholder-gray-500" placeholder="5432" value="5432">
+                        <div id="dbPortError" class="error-message">请输入端口</div>
+                    </div>
+                    <div class="col-span-2 space-y-2">
+                        <label class="text-xs font-medium text-gray-400 uppercase tracking-wider">数据库名称</label>
+                        <input type="text" id="dbName" class="input-field w-full px-4 py-3 rounded-xl text-sm text-white placeholder-gray-500" placeholder="verivek" value="verivek">
+                        <div id="dbNameError" class="error-message">请输入数据库名称</div>
+                    </div>
+                    <div class="col-span-2 sm:col-span-1 space-y-2">
+                        <label class="text-xs font-medium text-gray-400 uppercase tracking-wider">用户名</label>
+                        <input type="text" id="dbUser" class="input-field w-full px-4 py-3 rounded-xl text-sm text-white placeholder-gray-500" placeholder="postgres" value="postgres">
+                        <div id="dbUserError" class="error-message">请输入用户名</div>
+                    </div>
+                    <div class="col-span-2 sm:col-span-1 space-y-2">
+                        <label class="text-xs font-medium text-gray-400 uppercase tracking-wider">密码</label>
+                        <input type="password" id="dbPassword" class="input-field w-full px-4 py-3 rounded-xl text-sm text-white placeholder-gray-500" placeholder="数据库密码">
+                        <div id="dbPasswordError" class="error-message">请输入密码</div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center mt-8">
+                    <button type="button" id="testDbBtn" class="outline-btn px-5 py-3 rounded-xl text-sm font-medium text-gray-300 flex items-center space-x-2">
+                        <span id="testDbText">测试连接</span>
+                        <div id="testDbLoader" class="loading-spinner hidden"></div>
+                    </button>
+                    <button type="button" id="toStep2" class="gradient-btn px-6 py-3 rounded-xl text-sm font-semibold text-white flex items-center space-x-2">
+                        <span>下一步</span>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 步骤 2：运行模式与管理员账号 -->
+            <div id="section2" class="section">
+                <h2 class="text-lg font-semibold text-white mb-4">运行模式与管理员账号</h2>
+                
+                <p class="text-gray-400 text-sm mb-6">选择系统运行模式，并设置初始化管理员账号。该账户将拥有最高权限。</p>
+
+                <!-- 运行模式选择 -->
+                <div class="mb-6">
+                    <label class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3 block">运行模式</label>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div id="modeMulti" class="mode-card cursor-pointer rounded-xl p-4 border border-indigo-500 bg-indigo-500/10 transition-all selected" data-mode="multi_user">
+                            <div class="flex items-center space-x-3 mb-2">
+                                <div class="w-5 h-5 rounded-full border-2 border-indigo-500 flex items-center justify-center">
+                                    <div class="w-2.5 h-2.5 rounded-full bg-indigo-500 mode-dot"></div>
+                                </div>
+                                <span class="text-white font-medium text-sm">多用户模式</span>
+                            </div>
+                            <p class="text-gray-400 text-xs">支持多个用户账号，不同角色拥有不同权限。适用于团队协作。</p>
+                        </div>
+                        <div id="modeSingle" class="mode-card cursor-pointer rounded-xl p-4 border border-white/10 bg-white/5 transition-all hover:border-white/20" data-mode="single_user">
+                            <div class="flex items-center space-x-3 mb-2">
+                                <div class="w-5 h-5 rounded-full border-2 border-white/30 flex items-center justify-center">
+                                    <div class="w-2.5 h-2.5 rounded-full bg-transparent mode-dot"></div>
+                                </div>
+                                <span class="text-white font-medium text-sm">单用户模式</span>
+                            </div>
+                            <p class="text-gray-400 text-xs">仅供单用户使用。</p>
+                            <span class="inline-block mt-2 px-2 py-1 text-xs bg-yellow-500/20 text-yellow-400 rounded border border-yellow-500/30">开发中</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 单用户模式提示 -->
+                <div id="singleUserNotice" class="hidden mb-6 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30">
+                    <div class="flex items-start space-x-3">
+                        <svg class="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div>
+                            <p class="text-sm text-yellow-400 font-medium mb-1">单用户模式尚未实现</p>
+                            <p class="text-xs text-gray-400">当前选择仅用于记录部署模式，本次初始化仍将以多用户模式使用 PostgreSQL 完成。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="space-y-2">
+                        <label class="text-xs font-medium text-gray-400 uppercase tracking-wider">管理员用户名</label>
+                        <input type="text" id="adminUsername" class="input-field w-full px-4 py-3 rounded-xl text-sm text-white placeholder-gray-500" placeholder="admin" value="admin">
+                        <div id="adminUsernameError" class="error-message">用户名至少3个字符</div>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-medium text-gray-400 uppercase tracking-wider">登录密码</label>
+                        <input type="password" id="adminPassword" class="input-field w-full px-4 py-3 rounded-xl text-sm text-white placeholder-gray-500" placeholder="至少6位密码">
+                        <div id="adminPasswordError" class="error-message">密码至少6位</div>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-medium text-gray-400 uppercase tracking-wider">确认密码</label>
+                        <input type="password" id="adminPasswordConfirm" class="input-field w-full px-4 py-3 rounded-xl text-sm text-white placeholder-gray-500" placeholder="再次输入密码">
+                        <div id="adminPasswordConfirmError" class="error-message">两次输入的密码不一致</div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center mt-8">
+                    <button type="button" id="backToStep1" class="outline-btn px-5 py-3 rounded-xl text-sm font-medium text-gray-300 flex items-center space-x-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                        </svg>
+                        <span>上一步</span>
+                    </button>
+                    <button type="button" id="finishBtn" class="gradient-btn px-6 py-3 rounded-xl text-sm font-semibold text-white flex items-center space-x-2">
+                        <span id="finishBtnText">完成配置</span>
+                        <div id="finishBtnLoader" class="loading-spinner hidden"></div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 步骤 3：完成 -->
+            <div id="section3" class="section text-center py-8">
+                <div class="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <svg class="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+                <h2 class="text-2xl font-bold text-white mb-2">配置完成</h2>
+                <p class="text-gray-400 mb-8">数据库已启动，管理员账户已创建。</p>
+                <a href="/login" class="gradient-btn inline-flex px-8 py-3.5 rounded-xl font-semibold text-white text-sm items-center space-x-2">
+                    <span>进入登录页</span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/setup.js') }}"></script>
+</body>
+</html>

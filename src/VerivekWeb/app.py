@@ -11,6 +11,7 @@ from datetime import timedelta
 import tempfile
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from VerivekCore.Setup.setup_manager import SetupManager
 from VerivekCore.Database.db_client import DbClient
 from VerivekCore.AuthManager.auth_service import AuthService
 from VerivekCore.DatasetManager.dataset_manager import DatasetManager
@@ -36,22 +37,54 @@ if os.path.exists(_config_path):
     with open(_config_path, 'r', encoding='utf-8') as f:
         _app_config = json.load(f)
 
-db_client = DbClient()
-auth_service = AuthService(db_client.db_conn)
-dataset_manager = DatasetManager(db_client)
-model_manager = ModelManager(db_client)
-_training_venv_path = _app_config.get('training', {}).get('venv_path', 'C:/VeriVek/TaskEnv/venv')
-_training_task_env_base = _app_config.get('training', {}).get('task_env_base', '') or os.path.dirname(os.path.dirname(_training_venv_path.rstrip('/\\')))
-training_manager = TrainingManager(
-    db_client,
-    venv_path=_training_venv_path,
-    task_env_base=_training_task_env_base
-)
+# 首次启动配置管理：未完成 setup 前不初始化任何数据库相关服务
+setup_manager = SetupManager()
+_setup_complete = setup_manager.is_setup_complete()
+
+# 核心服务实例（setup 完成后才会初始化）
+db_client = None
+auth_service = None
+dataset_manager = None
+model_manager = None
+training_manager = None
+
+TRAINING_SCRIPTS_DIR = None
 
 ALLOWED_EXTENSIONS = {'py'}
 
-# 训练脚本目录从配置的训练环境基础目录推导
-TRAINING_SCRIPTS_DIR = os.path.join(_training_task_env_base, 'trainings')
+
+def _reload_app_config():
+    """从磁盘重新加载 config.json。"""
+    global _app_config
+    if os.path.exists(_config_path):
+        with open(_config_path, 'r', encoding='utf-8') as f:
+            _app_config = json.load(f)
+
+
+def init_services():
+    """初始化所有依赖数据库连接的核心服务。setup 完成后或首次访问非 setup 路由前调用。"""
+    global db_client, auth_service, dataset_manager, model_manager, training_manager, TRAINING_SCRIPTS_DIR
+    if db_client is not None:
+        return
+
+    db_client = DbClient()
+    auth_service = AuthService(db_client.db_conn)
+    dataset_manager = DatasetManager(db_client)
+    model_manager = ModelManager(db_client)
+
+    venv_path = _app_config.get('training', {}).get('venv_path', 'C:/VeriVek/TaskEnv/venv')
+    task_env_base = _app_config.get('training', {}).get('task_env_base', '') or os.path.dirname(os.path.dirname(venv_path.rstrip('/\\')))
+    training_manager = TrainingManager(
+        db_client,
+        venv_path=venv_path,
+        task_env_base=task_env_base
+    )
+    TRAINING_SCRIPTS_DIR = os.path.join(task_env_base, 'trainings')
+    os.makedirs(TRAINING_SCRIPTS_DIR, exist_ok=True)
+
+
+if _setup_complete:
+    init_services()
 
 def _flatten_dataset_dir(data_dir: str) -> None:
     """如果 data_dir 下只有一个子目录且不是 train/val，则将其内容提升到 data_dir"""
@@ -76,7 +109,6 @@ def _flatten_dataset_dir(data_dir: str) -> None:
     # 删除空子目录
     shutil.rmtree(sub_path, ignore_errors=True)
     print(f"[INFO] 自动扁平化数据集目录: 将 '{sub}/' 内容提升至 data/")
-os.makedirs(TRAINING_SCRIPTS_DIR, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -93,21 +125,159 @@ def require_auth(mode='api', roles=None):
             if roles:
                 user_id = session.get('user_id')
                 user_role = auth_service.get_user_role(user_id)
-                if user_role not in roles:
+                allowed_roles = set(roles)
+                if 'admin' in allowed_roles:
+                    allowed_roles.add('root')
+                if user_role not in allowed_roles:
                     return jsonify({'success': False, 'error': '权限不足，仅管理员可操作'}), 403
 
             return f(*args, **kwargs)
         return decorated_function
     return decorator
 
+
+# setup 相关路径在白名单中，避免被 before_request 拦截
+SETUP_EXCLUDED_PATHS = {'/setup', '/api/setup/status', '/api/setup/test-db', '/api/setup/finish'}
+
+
+@app.before_request
+def ensure_setup():
+    """确保系统已完成首次配置；未完成时所有非 setup 路由重定向到 /setup。"""
+    if request.endpoint == 'static' or request.path.startswith('/static/'):
+        return None
+    if request.path in SETUP_EXCLUDED_PATHS:
+        return None
+
+    if not setup_manager.is_setup_complete():
+        if request.is_json or request.path.startswith('/api/'):
+            return jsonify({'success': False, 'error': '系统尚未初始化，请访问 /setup 完成配置'}), 403
+        return redirect(url_for('setup'))
+
+    # setup 已完成，确保核心服务已初始化
+    if db_client is None:
+        try:
+            init_services()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'success': False, 'error': f'服务初始化失败: {str(e)}'}), 500
+
+
+@app.route('/setup')
+def setup():
+    """首次启动配置页面。"""
+    if setup_manager.is_setup_complete():
+        return redirect(url_for('index'))
+    return render_template('setup.html')
+
+
+@app.route('/api/setup/status', methods=['GET'])
+def api_setup_status():
+    """获取当前 setup 状态。"""
+    status = setup_manager.get_setup_status()
+    return jsonify({
+        'success': True,
+        'setup_completed': status.get('setup_completed', False)
+    })
+
+
+@app.route('/api/setup/test-db', methods=['POST'])
+def api_setup_test_db():
+    """测试数据库连接。"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': '请求体不能为空'}), 400
+
+    db_config = data.get('database', {})
+    ok, err = SetupManager._test_connection(db_config)
+    if ok:
+        return jsonify({'success': True, 'message': '数据库连接成功'})
+    return jsonify({'success': False, 'error': err}), 400
+
+
+@app.route('/api/setup/finish', methods=['POST'])
+def api_setup_finish():
+    """完成首次配置：保存配置、启动数据库、初始化表结构、创建管理员账户。"""
+    if setup_manager.is_setup_complete():
+        return jsonify({'success': False, 'error': '系统已完成初始化'}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': '请求体不能为空'}), 400
+
+    db_config = data.get('database', {})
+    admin = data.get('admin', {})
+
+    required_db = ['host', 'port', 'dbname', 'user', 'password']
+    for field in required_db:
+        if not db_config.get(field):
+            return jsonify({'success': False, 'error': f'数据库配置缺少 {field}'}), 400
+
+    username = admin.get('username', '').strip()
+    password = admin.get('password', '')
+    if not username or len(username) < 3:
+        return jsonify({'success': False, 'error': '管理员用户名至少3个字符'}), 400
+    if len(password) < 6:
+        return jsonify({'success': False, 'error': '管理员密码至少6位'}), 400
+
+    # 保存配置到 config.json
+    config = setup_manager.build_config(db_config)
+    setup_manager.save_config(config)
+    _reload_app_config()
+
+    # 尝试启动数据库服务（自启动功能）
+    ok, err = SetupManager.start_database_if_needed(db_config, max_wait=60)
+    if not ok:
+        return jsonify({'success': False, 'error': f'数据库启动失败: {err}'}), 500
+
+    # 初始化数据库表结构
+    try:
+        setup_manager.initialize_schema(db_config)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'数据库初始化失败: {str(e)}'}), 500
+
+    # 创建管理员账户
+    try:
+        setup_manager.create_admin_user(
+            db_config,
+            username,
+            password,
+            role=admin.get('role', 'root')
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'管理员创建失败: {str(e)}'}), 500
+
+    # 标记 setup 完成并初始化核心服务（单用户模式目前仅记录，不实现特殊逻辑）
+    setup_manager.mark_setup_complete(
+        deployment_mode=admin.get('mode', 'multi_user'),
+        admin_role=admin.get('role', 'root')
+    )
+    try:
+        init_services()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'服务初始化失败: {str(e)}'}), 500
+
+    return jsonify({'success': True, 'message': '配置完成，请登录'})
+
+
 @app.route('/')
 def index():
+    if not setup_manager.is_setup_complete():
+        return redirect(url_for('setup'))
     if 'user_id' in session:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
 
 @app.route('/login')
 def login():
+    if not setup_manager.is_setup_complete():
+        return redirect(url_for('setup'))
     if 'user_id' in session:
         return redirect(url_for('dashboard'))
     return render_template('login.html')
@@ -1893,6 +2063,14 @@ def api_admin_create_user():
         if role not in ('admin', 'researcher', 'guest'):
             role = 'researcher'
 
+        # 普通 admin 不能创建 root，也不能创建同级 admin（仅 root 可以）
+        if role == 'root':
+            return jsonify({'success': False, 'error': 'root 角色仅允许通过系统初始化创建'}), 403
+        if role == 'admin':
+            current_user_role = auth_service.get_user_role(session.get('user_id'))
+            if current_user_role != 'root':
+                return jsonify({'success': False, 'error': '权限不足，仅 root 可创建 admin'}), 403
+
         try:
             user_id = auth_service.register_user(username, password, role)
         except ValueError as e:
@@ -1912,7 +2090,30 @@ def api_admin_create_user():
 @app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
 @require_auth(roles=['admin'])
 def api_admin_delete_user(user_id):
-    """管理员：删除用户（不能删除自己）"""
+    """管理员：删除用户（不能删除自己，不能删除 root，admin 只能删除权限等级低于自己的用户）"""
+    try:
+        current_user_id = session.get('user_id')
+        current_user_role = auth_service.get_user_role(current_user_id)
+
+        target_user = auth_service.get_user_by_id(user_id)
+        if not target_user:
+            return jsonify({'success': False, 'error': '用户不存在'}), 404
+
+        if target_user['user_id'] == current_user_id:
+            return jsonify({'success': False, 'error': '不能删除自己'}), 400
+
+        if target_user['role'] == 'root':
+            return jsonify({'success': False, 'error': '不能删除 root'}), 403
+
+        if target_user['role'] == 'admin' and current_user_role != 'root':
+            return jsonify({'success': False, 'error': '权限不足，仅 root 可删除 admin'}), 403
+
+        auth_service.delete_user(user_id)
+        return jsonify({'success': True, 'message': '用户已删除'})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'删除失败: {str(e)}'}), 500
     try:
         current_user_id = session.get('user_id')
         if user_id == current_user_id:

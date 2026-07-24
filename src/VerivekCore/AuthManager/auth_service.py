@@ -88,8 +88,12 @@ class AuthService:
         """
         注册新用户。
         若用户名已存在抛出 ValueError。
+        root 不允许通过注册接口创建。
         返回新用户 user_id。
         """
+        if role == 'root':
+            raise ValueError("root 角色仅允许通过系统初始化创建")
+
         exists = self._execute("SELECT 1 FROM users WHERE username = %s", (username,))
         if exists:
             raise ValueError("用户名已存在")
@@ -102,6 +106,24 @@ class AuthService:
         """
         result = self._execute(query, (username, password_hash, role))
         return result[0]['user_id'] if result else None
+
+    def has_root(self) -> bool:
+        """检查系统中是否存在 root 角色。"""
+        result = self._execute("SELECT 1 FROM users WHERE role = 'root' LIMIT 1")
+        return bool(result)
+
+    def can_manage_role(self, current_role: str, target_role: str) -> bool:
+        """判断当前角色是否可以管理目标角色。"""
+        if current_role == 'root':
+            return target_role in ('root', 'admin', 'researcher', 'guest')
+        if current_role == 'admin':
+            return target_role in ('admin', 'researcher', 'guest')
+        return False
+
+    def has_higher_or_equal_role(self, current_role: str, target_role: str) -> bool:
+        """判断 current_role 是否拥有不低于 target_role 的权限等级。"""
+        levels = {'root': 4, 'admin': 3, 'researcher': 2, 'guest': 1}
+        return levels.get(current_role, 0) >= levels.get(target_role, 0)
 
     def get_user_by_id(self, user_id: int):
         """获取用户详细信息"""

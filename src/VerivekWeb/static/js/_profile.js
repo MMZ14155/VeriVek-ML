@@ -1,6 +1,7 @@
 let profileChart = null;
 
 const ROLE_MAP = {
+    root: { label: '超级管理员', class: 'bg-rose-500/20 text-rose-400 border-rose-500/30' },
     admin: { label: '管理员', class: 'bg-red-500/20 text-red-400 border-red-500/30' },
     researcher: { label: '研究员', class: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' },
     guest: { label: '访客', class: 'bg-gray-500/20 text-gray-400 border-gray-500/30' }
@@ -51,8 +52,8 @@ function renderProfile(user) {
     document.getElementById('stat-models').textContent = user.model_contributions;
     document.getElementById('stat-trainings').textContent = user.training_count;
 
-    // 管理员显示用户管理区域
-    if (user.role === 'admin') {
+    // 管理员或超级管理员显示用户管理区域
+    if (user.role === 'admin' || user.role === 'root') {
         document.getElementById('admin-section').classList.remove('hidden');
         loadAdminUsers();
     }

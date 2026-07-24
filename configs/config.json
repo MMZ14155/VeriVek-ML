@@ -6,7 +6,9 @@
         "port": 5432,
         "dbname": "verivek",
         "user": "postgres",
-        "password": "admin"
+        "password": "admin",
+        "service_name": "",
+        "start_command": ""
     },
     "minio": {
         "timeout": 30,

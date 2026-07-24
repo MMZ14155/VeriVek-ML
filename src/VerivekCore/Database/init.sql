@@ -3,9 +3,9 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(50) NOT NULL UNIQUE,
     password VARCHAR(255),
 
-    -- 用户角色
+    -- 用户角色（root 仅可由初始化创建）
     role VARCHAR(20) NOT NULL DEFAULT 'researcher'
-        CHECK (role IN ('admin', 'researcher', 'guest')),
+        CHECK (role IN ('root', 'admin', 'researcher', 'guest')),
 
     -- 用户状态
     last_login_at TIMESTAMP,
@@ -26,9 +26,6 @@ CREATE TABLE IF NOT EXISTS users (
         (role != 'guest')
     )
 );
-
-INSERT INTO users (username, password, role) VALUES
-('admin', 'verivek-admin', 'admin');
 
 CREATE TABLE IF NOT EXISTS datasets (
     dataset_id SERIAL PRIMARY KEY,
@@ -374,13 +371,13 @@ RETURNS BOOLEAN AS $$
 DECLARE
     v_user_role VARCHAR(20);
     v_is_public BOOLEAN;
-    v_is_creator BOOLEAN;
+    v_is_creator BOOLEAN; 
 BEGIN
     -- 获取用户角色
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
     
     -- 管理员可以访问所有资源
-    IF v_user_role = 'admin' THEN
+    IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
     
@@ -413,7 +410,7 @@ BEGIN
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
     
     -- 管理员可以访问所有资源
-    IF v_user_role = 'admin' THEN
+    IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
     
@@ -446,7 +443,7 @@ BEGIN
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
     
     -- 管理员可以访问所有资源
-    IF v_user_role = 'admin' THEN
+    IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
     
@@ -473,7 +470,7 @@ BEGIN
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
     
     -- 管理员可以修改所有资源
-    IF v_user_role = 'admin' THEN
+    IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
     
@@ -501,7 +498,7 @@ BEGIN
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
     
     -- 管理员可以修改所有资源
-    IF v_user_role = 'admin' THEN
+    IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
     
@@ -529,7 +526,7 @@ BEGIN
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
     
     -- 管理员可以修改所有资源
-    IF v_user_role = 'admin' THEN
+    IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
     
