@@ -1,0 +1,265 @@
+{% extends 'base.html' %}
+
+{% block title %}依赖项 - VeriVek{% endblock %}
+{% block nav_dependencies_class %}tab-active{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-3xl font-semibold text-white">依赖项</h1>
+        <p class="mt-2 text-sm text-gray-400">显示当前系统所使用的数据库、对象存储与机器学习后端配置。</p>
+    </div>
+
+    <div class="flex flex-col gap-6">
+        <!-- 数据库卡片 -->
+        <div class="glass-panel rounded-3xl border border-white/10 p-6">
+            <div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h2 class="text-xl font-semibold text-white">{{ dependencies.database.label }}</h2>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    {% for option in dependencies.database.options %}
+                    {% if option == dependencies.database.type %}
+                    <button type="button" class="rounded-full border border-white/10 px-3 py-1 text-xs bg-indigo-500/30 text-indigo-200" disabled>
+                        {{ 'PostgreSQL' if option == 'postgres' else 'MySQL' if option == 'mysql' else option }}
+                    </button>
+                    {% else %}
+                    <!-- <button type="button" class="rounded-full border border-white/10 px-3 py-1 text-xs bg-white/5 text-gray-400 hover:bg-white/10">
+                        {{ 'PostgreSQL' if option == 'postgres' else 'MySQL' if option == 'mysql' else option }}
+                    </button> -->
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="grid gap-3 text-sm text-gray-200">
+                <div class="rounded-2xl bg-white/5 p-4">
+                    <div class="text-gray-400 mb-2">主机</div>
+                    <div class="flex justify-between">
+                        <span class="font-mono text-indigo-200">{{ dependencies.database.config.host }}</span>
+                    </div>
+                </div>
+                <div class="rounded-2xl bg-white/5 p-4">
+                    <div class="text-gray-400 mb-2">端口</div>
+                    <div class="flex justify-between">
+                        <span class="font-mono text-indigo-200">{{ dependencies.database.config.port }}</span>
+                    </div>
+                </div>
+                <div class="rounded-2xl bg-white/5 p-4">
+                    <div class="text-gray-400 mb-2">数据库名</div>
+                    <div class="flex justify-between">
+                        <span class="font-mono text-indigo-200">{{ dependencies.database.config.dbname }}</span>
+                    </div>
+                </div>
+                <div class="rounded-2xl bg-white/5 p-4">
+                    <div class="text-gray-400 mb-2">用户名</div>
+                    <div class="flex justify-between">
+                        <span class="font-mono text-indigo-200">{{ dependencies.database.config.user }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 对象存储卡片 -->
+        <div class="glass-panel rounded-3xl border border-white/10 p-6">
+            <div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h2 class="text-xl font-semibold text-white">{{ dependencies.object_storage.label }}</h2>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    {% for option in dependencies.object_storage.options %}
+                    {% if option == dependencies.object_storage.type %}
+                    <button type="button" class="rounded-full border border-white/10 px-3 py-1 text-xs bg-indigo-500/30 text-indigo-200" disabled>
+                        {{ 'MinIO' if option == 'minio' else '不使用' if option == 'none' else option }}
+                    </button>
+                    {% else %}
+                    <!-- <button type="button" class="rounded-full border border-white/10 px-3 py-1 text-xs bg-white/5 text-gray-400 hover:bg-white/10">
+                        {{ 'MinIO' if option == 'minio' else '不使用' if option == 'none' else option }}
+                    </button> -->
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="grid gap-3 text-sm text-gray-200">
+                <div class="rounded-2xl bg-white/5 p-4">
+                    <div class="text-gray-400 mb-2">服务端点</div>
+                    <div class="flex justify-between">
+                        <span class="font-mono text-indigo-200">{{ dependencies.object_storage.config.endpoint_url }}</span>
+                    </div>
+                </div>
+                <div class="rounded-2xl bg-white/5 p-4">
+                    <div class="text-gray-400 mb-2">访问密钥</div>
+                    <div class="flex justify-between">
+                        <span class="text-rose-300">已隐藏</span>
+                    </div>
+                </div>
+                <div class="rounded-2xl bg-white/5 p-4">
+                    <div class="text-gray-400 mb-2">存储桶</div>
+                    <ul class="space-y-2">
+                        {% for sub_key, sub_value in dependencies.object_storage.config.buckets.items() %}
+                        <li class="flex items-center justify-between rounded-xl bg-slate-900/60 px-4 py-3">
+                            <span>{{ sub_key }}</span>
+                            <span class="text-indigo-300">{{ sub_value }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 机器学习框架卡片 -->
+        <div id="ml-backend-card" class="glass-panel rounded-3xl border border-white/10 p-6">
+            <div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h2 class="text-xl font-semibold text-white">{{ dependencies.ml_backend.label }}</h2>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    {% for option in dependencies.ml_backend.options %}
+                    {% if option == dependencies.ml_backend.type %}
+                    <button type="button" class="rounded-full border border-white/10 px-3 py-1 text-xs bg-indigo-500/30 text-indigo-200" disabled>
+                        {{ 'PyTorch' if option == 'pytorch' else 'TensorFlow' if option == 'tensorflow' else option }}
+                    </button>
+                    {% else %}
+                    <!-- <button type="button" class="rounded-full border border-white/10 px-3 py-1 text-xs bg-white/5 text-gray-400 hover:bg-white/10">
+                        {{ 'PyTorch' if option == 'pytorch' else 'TensorFlow' if option == 'tensorflow' else option }}
+                    </button> -->
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="grid gap-3 text-sm text-gray-200">
+                <div class="rounded-2xl bg-white/5 p-4">
+                    <div class="text-gray-400 mb-2">虚拟环境路径</div>
+                    <div class="flex items-center gap-2">
+                        <input id="venv-path-input" type="text" value="{{ dependencies.ml_backend.config.venv_path }}"
+                            class="flex-1 rounded-xl bg-slate-900/60 px-4 py-2 font-mono text-indigo-200 outline-none ring-1 ring-white/10 focus:ring-indigo-500">
+                        <button id="btn-save-venv-path" type="button" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500">
+                            保存
+                        </button>
+                    </div>
+                </div>
+                <div class="rounded-2xl bg-white/5 p-4">
+                    <div class="text-gray-400 mb-2">PyTorch</div>
+                    <ul class="space-y-2">
+                        <li class="flex items-center justify-between rounded-xl bg-slate-900/60 px-4 py-3">
+                            <span>版本</span>
+                            <span class="text-indigo-300">{{ dependencies.ml_backend.config.pytorch.version }}</span>
+                        </li>
+                        <li class="flex items-center justify-between rounded-xl bg-slate-900/60 px-4 py-3">
+                            <span>CUDA</span>
+                            <span class="text-indigo-300">
+                                {{ '可用' if dependencies.ml_backend.config.pytorch.cuda_available else '不可用' if dependencies.ml_backend.config.pytorch.cuda_available is not none else '未知' }}
+                            </span>
+                        </li>
+                    </ul>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <button id="btn-create-venv" type="button" class="rounded-full bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500">
+                        创建虚拟环境
+                    </button>
+                    <button id="btn-install-pytorch" type="button" class="rounded-full bg-fuchsia-600 px-4 py-2 text-sm text-white hover:bg-fuchsia-500">
+                        安装 PyTorch
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .flash-card-success {
+        animation: flash-border-success 0.6s ease-in-out 2;
+    }
+
+    @keyframes flash-border-success {
+        0%, 100% { border-color: rgba(255, 255, 255, 0.1); }
+        50% { border-color: rgba(99, 102, 241, 0.8); }
+    }
+
+    .card-error {
+        border-color: rgba(244, 63, 94, 0.8) !important;
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const mlBackendCard = document.getElementById('ml-backend-card');
+
+        function clearCardState() {
+            if (!mlBackendCard) return;
+            mlBackendCard.classList.remove('flash-card-success', 'card-error');
+        }
+
+        function flashSuccess() {
+            if (!mlBackendCard) return;
+            clearCardState();
+            void mlBackendCard.offsetWidth;
+            mlBackendCard.classList.add('flash-card-success');
+            setTimeout(() => mlBackendCard.classList.remove('flash-card-success'), 1200);
+        }
+
+        function markError() {
+            if (!mlBackendCard) return;
+            clearCardState();
+            mlBackendCard.classList.add('card-error');
+        }
+
+        const createBtn = document.getElementById('btn-create-venv');
+        const installBtn = document.getElementById('btn-install-pytorch');
+        const saveVenvPathBtn = document.getElementById('btn-save-venv-path');
+        const venvPathInput = document.getElementById('venv-path-input');
+
+        function postAction(url, btn) {
+            btn.disabled = true;
+            btn.textContent = '处理中...';
+            fetch(url, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) flashSuccess();
+                    else markError();
+                })
+                .catch(() => markError())
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.textContent = btn.dataset.label;
+                });
+        }
+
+        if (createBtn) {
+            createBtn.dataset.label = '创建虚拟环境';
+            createBtn.addEventListener('click', () => postAction('/api/dependencies/venv', createBtn));
+        }
+        if (installBtn) {
+            installBtn.dataset.label = '安装 PyTorch';
+            installBtn.addEventListener('click', () => postAction('/api/dependencies/pytorch', installBtn));
+        }
+
+        if (saveVenvPathBtn && venvPathInput) {
+            saveVenvPathBtn.dataset.label = '保存';
+            saveVenvPathBtn.addEventListener('click', () => {
+                const newPath = venvPathInput.value.trim();
+                if (!newPath) {
+                    markError();
+                    return;
+                }
+                saveVenvPathBtn.disabled = true;
+                saveVenvPathBtn.textContent = '保存中...';
+                fetch('/api/dependencies/venv_path', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ venv_path: newPath })
+                })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) flashSuccess();
+                        else markError();
+                    })
+                    .catch(() => markError())
+                    .finally(() => {
+                        saveVenvPathBtn.disabled = false;
+                        saveVenvPathBtn.textContent = saveVenvPathBtn.dataset.label;
+                    });
+            });
+        }
+    });
+</script>
+{% endblock %}

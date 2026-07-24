@@ -29,6 +29,8 @@ class TrainingRepository:
                                created_by,
                                model_commit_id,
                                branch_id,
+                               dataset_id,
+                               preprocessed_id,
                                hyperparameters,
                                status,
                                metrics,
@@ -52,11 +54,12 @@ class TrainingRepository:
                 return {
                     "training_id": row[0], "training_name": row[1], "description": row[2],
                     "created_by": row[3], "model_commit_id": row[4], "branch_id": row[5],
-                    "hyperparameters": row[6], "status": row[7], "metrics": row[8],
-                    "final_metrics": row[9], "main_weight_id": row[10], "checkpoint_weight_id": row[11],
-                    "compute_time_seconds": row[12], "gpu_type": row[13], "gpu_count": row[14],
-                    "started_at": row[15], "completed_at": row[16], "error_message": row[17],
-                    "exit_code": row[18], "created_at": row[19], "updated_at": row[20]
+                    "dataset_id": row[6], "preprocessed_id": row[7],
+                    "hyperparameters": row[8], "status": row[9], "metrics": row[10],
+                    "final_metrics": row[11], "main_weight_id": row[12], "checkpoint_weight_id": row[13],
+                    "compute_time_seconds": row[14], "gpu_type": row[15], "gpu_count": row[16],
+                    "started_at": row[17], "completed_at": row[18], "error_message": row[19],
+                    "exit_code": row[20], "created_at": row[21], "updated_at": row[22]
                 }
             return None
 
@@ -72,6 +75,8 @@ class TrainingRepository:
                          training_name, \
                          created_by, \
                          model_commit_id,
+                         dataset_id,
+                         preprocessed_id,
                          status, \
                          started_at, \
                          completed_at, \
@@ -95,8 +100,9 @@ class TrainingRepository:
             return [
                 {
                     "training_id": r[0], "training_name": r[1], "created_by": r[2],
-                    "model_commit_id": r[3], "status": r[4], "started_at": r[5],
-                    "completed_at": r[6], "created_at": r[7]
+                    "model_commit_id": r[3], "dataset_id": r[4], "preprocessed_id": r[5],
+                    "status": r[6], "started_at": r[7],
+                    "completed_at": r[8], "created_at": r[9]
                 }
                 for r in cur.fetchall()
             ]

@@ -19,6 +19,10 @@ class AuthService:
 
             if query.strip().upper().startswith('SELECT'):
                 return cursor.fetchall()
+            elif query.strip().upper().startswith('INSERT'):
+                rows = cursor.fetchall() if cursor.description else []
+                self._db_conn.commit()
+                return rows
             else:
                 self._db_conn.commit()
                 return cursor.rowcount

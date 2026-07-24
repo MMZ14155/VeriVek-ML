@@ -19,6 +19,9 @@ from VerivekCore.ModelManager.architecture_generator import ArchitectureGenerato
 from VerivekCore.Training.training_manager import TrainingManager
 from VerivekCore.Training.training_code_generator import TrainingCodeGenerator
 from VerivekCore.Training.gpu_monitor import get_gpu_info, get_total_usage, get_ac_status
+from VerivekCore.Training.venv_check import check_pytorch_in_venv
+from VerivekCore.Training.setup_task_env import create_task_environment, install_pytorch
+from VerivekCore.ModelManager.ai_assistant_service import AIAssistantService
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'verivek-dev-secret-key-change-in-production')
@@ -38,14 +41,17 @@ auth_service = AuthService(db_client.db_conn)
 dataset_manager = DatasetManager(db_client)
 model_manager = ModelManager(db_client)
 _training_venv_path = _app_config.get('training', {}).get('venv_path', 'C:/VeriVek/TaskEnv/venv')
+_training_task_env_base = _app_config.get('training', {}).get('task_env_base', '') or os.path.dirname(os.path.dirname(_training_venv_path.rstrip('/\\')))
 training_manager = TrainingManager(
     db_client,
-    venv_path=_training_venv_path
+    venv_path=_training_venv_path,
+    task_env_base=_training_task_env_base
 )
 
 ALLOWED_EXTENSIONS = {'py'}
 
-TRAINING_SCRIPTS_DIR = "C:/VeriVek/TaskEnv/trainings"
+# 训练脚本目录从配置的训练环境基础目录推导
+TRAINING_SCRIPTS_DIR = os.path.join(_training_task_env_base, 'trainings')
 
 def _flatten_dataset_dir(data_dir: str) -> None:
     """如果 data_dir 下只有一个子目录且不是 train/val，则将其内容提升到 data_dir"""
@@ -74,8 +80,6 @@ os.makedirs(TRAINING_SCRIPTS_DIR, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
 
 def require_auth(mode='api', roles=None):
     def decorator(f):
@@ -133,6 +137,46 @@ def models():
 def training():
     return render_template('_training.html')
 
+@app.route('/dependencies')
+@require_auth(mode='page')
+def dependencies():
+    dependencies_info = {
+        'database': {
+            'type': 'postgres',
+            'label': '数据库',
+            'options': ['postgres', 'mysql'],
+            'config': {
+                'host': db_client.cfg.get('database', {}).get('host', '未知'),
+                'port': db_client.cfg.get('database', {}).get('port', '未知'),
+                'dbname': db_client.cfg.get('database', {}).get('dbname', '未知'),
+                'user': db_client.cfg.get('database', {}).get('user', '未知'),
+            }
+        },
+        'object_storage': {
+            'type': 'minio',
+            'label': '对象存储',
+            'options': ['minio', 'none'],
+            'config': {
+                'endpoint_url': db_client.cfg.get('minio', {}).get('endpoint_url', '未知'),
+                'buckets': db_client.cfg.get('minio', {}).get('buckets', {}),
+                'access_key': db_client.cfg.get('minio', {}).get('access_key', '未知'),
+            }
+        },
+        'ml_backend': {
+            'type': 'pytorch',
+            'label': '机器学习框架',
+            'options': ['pytorch', 'tensorflow'],
+            'config': {
+                'venv_path': _app_config.get('training', {}).get('venv_path', '未知'),
+                'pytorch': check_pytorch_in_venv(
+                    _app_config.get('training', {}).get('venv_path', 'C:/VeriVek/TaskEnv/venv')
+                )
+            }
+        },
+        'config_path': os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'configs', 'config.json'))
+    }
+    return render_template('_dependencies.html', dependencies=dependencies_info)
+
 @app.route('/model-builder')
 @require_auth(mode='page')
 def model_builder():
@@ -147,28 +191,6 @@ def profile():
 @require_auth(mode='page')
 def preprocess_builder():
     return render_template('_preprocess_builder.html')
-
-def execute_query(conn, query, params=None):
-    import psycopg2.extras
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-
-        # 如果是 SELECT 语句，获取结果
-        if query.strip().upper().startswith('SELECT'):
-            result = cursor.fetchall()
-            return result
-        else:
-            conn.commit()
-            return cursor.rowcount
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
-        cursor.close()
 
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
@@ -213,7 +235,6 @@ def api_login():
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': f'登录失败: {str(e)}'}), 500
 
-
 @app.route('/api/auth/register', methods=['POST'])
 def api_register():
     """用户注册接口"""
@@ -240,6 +261,13 @@ def api_register():
 
         try:
             user_id = auth_service.register_user(username, password, role)
+
+            # 注册成功后自动登录
+            session['user_id'] = user_id
+            session['username'] = username
+            session['role'] = role
+            session.permanent = False
+
             return jsonify({
                 'success': True,
                 'user_id': user_id,
@@ -252,7 +280,6 @@ def api_register():
         import traceback
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': f'注册失败: {str(e)}'}), 500
-
 
 @app.route('/api/auth/logout', methods=['POST'])
 def api_logout():
@@ -575,10 +602,8 @@ def get_preprocess_status(preprocessed_id: int):
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 # 标注文件扩展名集合
 _ANNOTATION_EXTS = {'.csv', '.xls', '.xlsx', '.json', '.txt', '.tsv'}
-
 
 def _build_tree_from_zip_namelist(namelist):
     """从 zip namelist 构建树形结构"""
@@ -619,7 +644,6 @@ def _build_tree_from_zip_namelist(namelist):
                 current_node = node_map[current_path]
 
     return root
-
 
 @app.route('/api/datasets/<int:dataset_id>/versions/<int:version_id>/structure', methods=['GET'])
 @require_auth()
@@ -674,7 +698,6 @@ def get_dataset_version_structure(dataset_id: int, version_id: int):
         import traceback
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/api/models', methods=['GET'])
 @require_auth()
@@ -732,7 +755,6 @@ def delete_model(model_id):
         import traceback
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/models/<int:model_id>/branches', methods=['POST'])
 @require_auth()
@@ -963,6 +985,108 @@ def generate_architecture():
             'error': str(e)
         }), 400
 
+
+@app.route('/api/ai-assistant/chat', methods=['POST'])
+@require_auth()
+def ai_assistant_chat():
+    """AI 助手对话：接收前端设置和消息历史，调用 OpenAI 兼容格式 LLM。"""
+    try:
+        data = request.get_json() or {}
+
+        api_key = data.get('api_key', '').strip()
+        provider = data.get('provider', 'openai').strip().lower()
+        base_url = data.get('base_url', '').strip() or None
+        model = data.get('model', '').strip() or None
+        messages = data.get('messages', [])
+        graph_structure = data.get('graph_structure')
+        current_code = data.get('current_code')
+        task = data.get('task')
+        temperature = data.get('temperature', 0.7)
+        max_tokens = data.get('max_tokens', 2048)
+
+        if not api_key:
+            return jsonify({'success': False, 'error': '缺少 API Key，请先在设置中配置'}), 400
+
+        if not messages:
+            return jsonify({'success': False, 'error': '消息内容不能为空'}), 400
+
+        assistant = AIAssistantService(
+            api_key=api_key,
+            provider=provider,
+            base_url=base_url,
+            model=model,
+        )
+
+        result = assistant.chat(
+            messages=messages,
+            graph_structure=graph_structure,
+            current_code=current_code,
+            task=task,
+            temperature=float(temperature),
+            max_tokens=int(max_tokens),
+        )
+
+        if result.get('success'):
+            return jsonify(result)
+        return jsonify(result), 502
+
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except ImportError as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ai-assistant/quick-action', methods=['POST'])
+@require_auth()
+def ai_assistant_quick_action():
+    """AI 助手快捷操作：解释架构 / 优化建议。"""
+    try:
+        data = request.get_json() or {}
+
+        api_key = data.get('api_key', '').strip()
+        provider = data.get('provider', 'openai').strip().lower()
+        base_url = data.get('base_url', '').strip() or None
+        model = data.get('model', '').strip() or None
+        action = data.get('action', '').strip().lower()
+        graph_structure = data.get('graph_structure')
+        current_code = data.get('current_code')
+
+        if not api_key:
+            return jsonify({'success': False, 'error': '缺少 API Key'}), 400
+
+        if not graph_structure:
+            return jsonify({'success': False, 'error': '缺少架构图结构'}), 400
+
+        assistant = AIAssistantService(
+            api_key=api_key,
+            provider=provider,
+            base_url=base_url,
+            model=model,
+        )
+
+        if action == 'explain':
+            result = assistant.explain_architecture(graph_structure, current_code)
+        elif action == 'optimize':
+            result = assistant.suggest_optimization(graph_structure, current_code)
+        else:
+            return jsonify({'success': False, 'error': '未知的快捷操作类型'}), 400
+
+        if result.get('success'):
+            return jsonify(result)
+        return jsonify(result), 502
+
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/architecture/params', methods=['POST'])
 @require_auth()
 def calculate_architecture_params():
@@ -1087,7 +1211,6 @@ def save_architecture():
             'success': False,
             'error': str(e)
         }), 400
-
 
 @app.route('/api/trainings', methods=['POST'])
 @require_auth()
@@ -1348,6 +1471,26 @@ def get_trainings():
             'total': len(enriched_trainings)
         })
 
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/trainings/trends', methods=['GET'])
+@require_auth()
+def get_training_trends():
+    """获取最近 N 天训练任务趋势统计。"""
+    try:
+        days = request.args.get('days', 7, type=int)
+        if days <= 0:
+            days = 7
+
+        trends = training_manager.get_training_trends(days=days)
+        return jsonify({
+            'success': True,
+            'trends': trends
+        })
     except Exception as e:
         import traceback
         print(traceback.format_exc())
@@ -1632,7 +1775,6 @@ def get_power_status():
             'error': str(e)
         }), 500
 
-
 @app.route('/api/trainings/<int:training_id>/logs', methods=['GET'])
 @require_auth()
 def get_training_logs(training_id):
@@ -1649,7 +1791,6 @@ def get_training_logs(training_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 @app.route('/api/trainings/<int:training_id>/metrics', methods=['GET'])
 @require_auth()
 def get_training_metrics_history(training_id):
@@ -1664,7 +1805,6 @@ def get_training_metrics_history(training_id):
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/api/trainings/<int:training_id>/stop', methods=['POST'])
 @require_auth()
@@ -1716,7 +1856,6 @@ def api_user_profile_contributions():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 @app.route('/api/admin/users', methods=['GET'])
 @require_auth(roles=['admin'])
 def api_admin_list_users():
@@ -1728,7 +1867,6 @@ def api_admin_list_users():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/api/admin/users', methods=['POST'])
 @require_auth(roles=['admin'])
@@ -1771,7 +1909,6 @@ def api_admin_create_user():
         traceback.print_exc()
         return jsonify({'success': False, 'error': f'创建失败: {str(e)}'}), 500
 
-
 @app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
 @require_auth(roles=['admin'])
 def api_admin_delete_user(user_id):
@@ -1798,6 +1935,73 @@ def api_admin_delete_user(user_id):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/dependencies/venv', methods=['POST'])
+@require_auth(roles=['admin'])
+def api_create_venv():
+    """创建训练任务虚拟环境（仅管理员）"""
+    try:
+        venv_path = _app_config.get('training', {}).get('venv_path', 'C:/VeriVek/TaskEnv/venv')
+        success = create_task_environment(venv_path=venv_path)
+        return jsonify({
+            'success': success,
+            'message': '虚拟环境创建成功' if success else '虚拟环境创建失败'
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/dependencies/pytorch', methods=['POST'])
+@require_auth(roles=['admin'])
+def api_install_pytorch():
+    """在训练任务虚拟环境中安装 PyTorch（仅管理员）"""
+    try:
+        venv_path = _app_config.get('training', {}).get('venv_path', 'C:/VeriVek/TaskEnv/venv')
+        success = install_pytorch(venv_path=venv_path)
+        return jsonify({
+            'success': success,
+            'message': 'PyTorch 安装成功' if success else 'PyTorch 安装失败'
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/dependencies/venv_path', methods=['POST'])
+@require_auth(roles=['admin'])
+def api_set_venv_path():
+    """管理员：修改训练任务虚拟环境路径"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '请求体不能为空'}), 400
+
+        new_path = data.get('venv_path', '').strip()
+        if not new_path:
+            return jsonify({'success': False, 'error': '虚拟环境路径不能为空'}), 400
+
+        # 确保 training 配置段存在
+        if 'training' not in _app_config:
+            _app_config['training'] = {}
+        _app_config['training']['venv_path'] = new_path
+
+        # 写回 config.json
+        with open(_config_path, 'w', encoding='utf-8') as f:
+            json.dump(_app_config, f, indent=4, ensure_ascii=False)
+
+        # 重新初始化 TrainingManager
+        global training_manager
+        training_manager = TrainingManager(db_client, venv_path=new_path)
+
+        return jsonify({
+            'success': True,
+            'venv_path': new_path,
+            'message': '虚拟环境路径已更新'
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
