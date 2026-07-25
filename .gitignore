@@ -12,5 +12,6 @@ configs/user_config.json
 
 src/VerivekCore/native/HardwareMonitor/build
 src/VerivekCore/native/VekCompiler/build
+src/VerivekCore/native/TrainCodegen/build
 src/VerivekCore/Training/hardware_monitor.dll
 src/VerivekCore/ModelManager/vek_compiler.dll
