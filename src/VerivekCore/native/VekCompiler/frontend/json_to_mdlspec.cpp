@@ -24,6 +24,8 @@ namespace vek {
                         parse_nodes(spec);
                     } else if (key == "connections") {
                         parse_connections(spec);
+                    } else if (key == "groups") {
+                        parse_groups(spec);
                     } else {
                         skip_value();
                     }
@@ -265,6 +267,43 @@ namespace vek {
                         }
                     }
 
+                    skip_ws();
+                    if (peek(',')) consume(',');
+                }
+                expect(']');
+            }
+
+            ModelSpecGroup parse_group() {
+                expect('{');
+                ModelSpecGroup group;
+                while (!peek('}')) {
+                    std::string key = parse_string();
+                    skip_ws();
+                    expect(':');
+                    skip_ws();
+                    if (key == "name") group.name = parse_string();
+                    else if (key == "nodes") group.nodes = parse_int_array();
+                    else if (key == "children") {
+                        expect('[');
+                        while (!peek(']')) {
+                            group.children.push_back(parse_group());
+                            skip_ws();
+                            if (peek(',')) consume(',');
+                        }
+                        expect(']');
+                    }
+                    else skip_value();
+                    skip_ws();
+                    if (peek(',')) consume(',');
+                }
+                expect('}');
+                return group;
+            }
+
+            void parse_groups(ModelSpec& spec) {
+                expect('[');
+                while (!peek(']')) {
+                    spec.groups.push_back(parse_group());
                     skip_ws();
                     if (peek(',')) consume(',');
                 }

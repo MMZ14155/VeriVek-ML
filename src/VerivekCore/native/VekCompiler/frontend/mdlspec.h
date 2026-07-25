@@ -21,10 +21,17 @@ namespace vek {
         std::vector<std::string> outputs; // 输出名称，为空时自动生成
     };
 
+    struct ModelSpecGroup {
+        std::string name; // 局部名称，仅需在同一父分组内唯一
+        std::vector<int> nodes; // 直接包含的节点 id
+        std::vector<ModelSpecGroup> children; // 嵌套子分组，完整标识为点分隔路径
+    };
+
     struct ModelSpec {
         std::string name;
         std::vector<ModelSpecTensor> inputs;
         std::vector<ModelSpecTensor> outputs;
         std::vector<ModelSpecNode> nodes;
+        std::vector<ModelSpecGroup> groups; // 命名分组，可嵌套，仅最外层名称用于代码生成
     };
 }

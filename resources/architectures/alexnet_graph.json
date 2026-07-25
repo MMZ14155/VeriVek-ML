@@ -47,5 +47,27 @@
     { "from": { "nodeId": 20, "port": "out" }, "to": { "nodeId": 21, "port": "in" } },
     { "from": { "nodeId": 21, "port": "out" }, "to": { "nodeId": 22, "port": "in" } },
     { "from": { "nodeId": 22, "port": "out" }, "to": { "nodeId": 23, "port": "in" } }
+  ],
+  "groups": [
+    {
+      "name": "features",
+      "nodes": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+      "children": [
+        { "name": "conv1", "nodes": [2, 3, 4] },
+        { "name": "conv2", "nodes": [5, 6, 7] },
+        { "name": "conv3", "nodes": [8, 9] },
+        { "name": "conv4", "nodes": [10, 11] },
+        { "name": "conv5", "nodes": [12, 13, 14] }
+      ]
+    },
+    {
+      "name": "classifier",
+      "nodes": [16, 17, 18, 19, 20, 21, 22],
+      "children": [
+        { "name": "fc1", "nodes": [16, 17, 18] },
+        { "name": "fc2", "nodes": [19, 20, 21] },
+        { "name": "head", "nodes": [22] }
+      ]
+    }
   ]
 }

@@ -1,6 +1,6 @@
 #include "mdlspec_to_ir.h"
 
-#include "ir_optimize.h"
+#include "ir_var_alloc.h"
 #include "shape.h"
 
 #include <algorithm>
@@ -59,6 +59,29 @@ namespace vek {
             }
             return order;
         }
+
+        // 计算每个节点所属的最外层分组名，子分组名称仅需在同一父分组内唯一，完整标识为点分隔路径，代码生成仅使用最外层名称
+        void collect_outer_groups(
+            const ModelSpecGroup& group,
+            const std::string& root,
+            std::map<std::string, std::string>& out
+        ) {
+            for (int node_id : group.nodes) {
+                out.emplace(std::to_string(node_id), root);
+            }
+            for (const auto& child : group.children) {
+                collect_outer_groups(child, root, out);
+            }
+        }
+
+        std::map<std::string, std::string> compute_outer_groups(const ModelSpec& spec) {
+            std::map<std::string, std::string> node_group;
+            for (const auto& g : spec.groups) {
+                if (g.name.empty()) continue;
+                collect_outer_groups(g, g.name, node_group);
+            }
+            return node_group;
+        }
     }
 
     Graph mdlspec_to_ir(const ModelSpec& spec) {
@@ -91,6 +114,7 @@ namespace vek {
         }
 
         std::vector<std::string> order = topological_order(spec);
+        std::map<std::string, std::string> node_group = compute_outer_groups(spec);
 
         for (const std::string& node_id : order) {
             auto it = node_index_map.find(node_id);
@@ -116,7 +140,11 @@ namespace vek {
             int output_tensor_id = graph.add_tensor("n" + node.id, {});
             tensor_id_map[node.id] = output_tensor_id;
 
-            graph.add_node(node.type, node.params, input_ids, {output_tensor_id});
+            int ir_node_id = graph.add_node(node.type, node.params, input_ids, {output_tensor_id});
+            auto group_it = node_group.find(node.id);
+            if (group_it != node_group.end()) {
+                graph.node_groups[ir_node_id] = group_it->second;
+            }
         }
 
         // 设置输出张量
@@ -139,7 +167,7 @@ namespace vek {
             throw std::runtime_error("shape propagation failed");
         }
 
-        optimize_ir(graph);
+        compute_var_slots(graph);
 
         return graph;
     }

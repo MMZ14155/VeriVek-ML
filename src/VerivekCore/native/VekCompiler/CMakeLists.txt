@@ -14,7 +14,7 @@ set(VEK_SOURCES
     frontend/vek_to_mdlspec.cpp
 
     middle/ir.cpp
-    middle/ir_optimize.cpp
+    middle/ir_var_alloc.cpp
     middle/ir_analysis.cpp
     middle/lexer.cpp
     middle/parser.cpp
@@ -31,7 +31,7 @@ set(VEK_HEADERS
     frontend/mdlspec_to_ir.h
     frontend/vek_to_mdlspec.h
     middle/ir.h
-    middle/ir_optimize.h
+    middle/ir_var_alloc.h
     middle/ir_analysis.h
     middle/lexer.h
     middle/parser.h

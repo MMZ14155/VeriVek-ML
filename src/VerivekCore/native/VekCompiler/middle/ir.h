@@ -29,6 +29,8 @@ namespace vek {
         std::vector<Node> nodes;
         int input_tensor = -1;
         std::vector<int> output_tensors;
+        std::map<int, std::string> node_groups; // 节点 id → 最外层分组名，用于生成 nn.Sequential 子模块
+        std::map<int, int> tensor_slot; // 张量 id → 变量槽位编号的静态全量映射（0 为图输入变量），由 compute_var_slots 分配，backend 查表命名
 
         int add_tensor(
             const std::string& name,

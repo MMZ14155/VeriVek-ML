@@ -29,5 +29,23 @@
     { "from": { "nodeId": 11, "port": "out" }, "to": { "nodeId": 12, "port": "in" } },
     { "from": { "nodeId": 12, "port": "out" }, "to": { "nodeId": 13, "port": "in" } },
     { "from": { "nodeId": 13, "port": "out" }, "to": { "nodeId": 14, "port": "in" } }
+  ],
+  "groups": [
+    {
+      "name": "features",
+      "nodes": [2, 3, 4, 5, 6, 7],
+      "children": [
+        { "name": "block1", "nodes": [2, 3, 4] },
+        { "name": "block2", "nodes": [5, 6, 7] }
+      ]
+    },
+    {
+      "name": "classifier",
+      "nodes": [9, 10, 11, 12, 13],
+      "children": [
+        { "name": "hidden", "nodes": [9, 10, 11, 12] },
+        { "name": "head", "nodes": [13] }
+      ]
+    }
   ]
 }

@@ -1,5 +1,7 @@
 #include "ir_builder.h"
 
+#include "ir_var_alloc.h"
+
 #include <cassert>
 #include <stdexcept>
 
@@ -165,6 +167,8 @@ namespace vek {
 
     Graph build_ir(const AstProgram& program, const std::string& target_name) {
         IrBuilder builder;
-        return builder.build(program, target_name);
+        Graph graph = builder.build(program, target_name);
+        compute_var_slots(graph);
+        return graph;
     }
 }
