@@ -118,15 +118,16 @@ class DatasetRepository:
             description: str = "",
             format: str = "",
             tags: str = "",
-            visibility: str = "private"
+            visibility: str = "private",
+            owner_id: int = None
     ) -> int:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO datasets (dataset_name, description, format, tags,
-                                         total_rows, total_size_bytes, visibility)
-                   VALUES (%s, %s, %s, %s, 0, 0, %s)
+                                         total_rows, total_size_bytes, visibility, owner_id)
+                   VALUES (%s, %s, %s, %s, 0, 0, %s, %s)
                    RETURNING dataset_id""",
-                (dataset_name, description, format, tags, visibility)
+                (dataset_name, description, format, tags, visibility, owner_id)
             )
             dataset_id = cur.fetchone()[0]
             self.db.db_conn.commit()

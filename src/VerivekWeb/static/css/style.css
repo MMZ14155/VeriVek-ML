@@ -2,6 +2,16 @@
     background-color: #0a0a0f;
     color: #e2e8f0;
 }
+
+/* 修复下拉框 option 白底白字不可见的问题 */
+select option {
+    background-color: #13131f;
+    color: #e2e8f0;
+}
+select option:disabled {
+    color: #64748b;
+}
+
 .glass-panel {
     background: rgba(19, 19, 31, 0.8);
     backdrop-filter: blur(12px);

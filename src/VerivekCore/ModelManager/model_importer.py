@@ -77,11 +77,11 @@ class ModelImporter:
         validation = self.validate_model_file(model_path)
 
         try:
-            model = self.repo.get_model_by_name(model_name)
+            model = self.repo.get_model_by_name(model_name, owner_id=author)
             if model:
                 model_id = model["model_id"]
             else:
-                model_id = self.repo.create_model(model_name, description, tags, visibility)
+                model_id = self.repo.create_model(model_name, description, tags, visibility, owner_id=author)
                 print(f"新建模型 model_id={model_id}")
 
             branch = self.repo.get_branch(model_id, branch_name)

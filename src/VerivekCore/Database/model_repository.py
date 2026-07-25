@@ -18,10 +18,10 @@ class ModelRepository:
             cur.execute("SELECT can_modify_model(%s, %s)", (user_id, model_id))
             return cur.fetchone()[0]
 
-    def get_model_by_name(self, model_name: str) -> Optional[Dict]:
+    def get_model_by_name(self, model_name: str, owner_id: int = None) -> Optional[Dict]:
         with self.db.db_conn.cursor() as cur:
-            cur.execute("SELECT model_id, description, tags FROM models WHERE model_name = %s",
-                        (model_name,))
+            cur.execute("SELECT model_id, description, tags FROM models WHERE model_name = %s AND owner_id IS NOT DISTINCT FROM %s",
+                        (model_name, owner_id))
             row = cur.fetchone()
             if row:
                 return {"model_id": row[0], "description": row[1], "tags": row[2]}
@@ -62,11 +62,11 @@ class ModelRepository:
                 "tags": r[3], "created_at": r[4], "branch_count": r[5]
             } for r in cur.fetchall()]
 
-    def create_model(self, model_name: str, description: str = "", tags: str = "", visibility: str = "private") -> int:
+    def create_model(self, model_name: str, description: str = "", tags: str = "", visibility: str = "private", owner_id: int = None) -> int:
         with self.db.db_conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO models (model_name, description, tags, visibility) VALUES (%s, %s, %s, %s) RETURNING model_id",
-                (model_name, description, tags, visibility)
+                "INSERT INTO models (model_name, description, tags, visibility, owner_id) VALUES (%s, %s, %s, %s, %s) RETURNING model_id",
+                (model_name, description, tags, visibility, owner_id)
             )
             model_id = cur.fetchone()[0]
             self.db.db_conn.commit()

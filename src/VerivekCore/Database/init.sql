@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS datasets (
     format VARCHAR(20), -- csv, json等
     tags TEXT, -- CV, NLP等
 
+    -- 所有者（唯一，可转移；ON DELETE SET NULL 保留历史资源）
+    owner_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+
     visibility VARCHAR(10) DEFAULT 'private' CHECK (visibility IN ('public', 'private')),
 
     head_version_id INTEGER, -- 最新提交的ID
@@ -107,10 +110,16 @@ CREATE TABLE IF NOT EXISTS models (
     description TEXT,
     tags TEXT, -- CV, NLP等
 
+    -- 所有者（唯一，可转移；ON DELETE SET NULL 保留历史资源）
+    owner_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+
     visibility VARCHAR(10) DEFAULT 'private' CHECK (visibility IN ('public', 'private')),
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- 名称在单个用户命名空间内唯一，允许不同用户同名
+    UNIQUE (owner_id, model_name)
 );
 
 CREATE TABLE IF NOT EXISTS model_branches (
@@ -148,6 +157,18 @@ CREATE TABLE IF NOT EXISTS commit_parents (
 );
 
 ALTER TABLE model_branches ADD FOREIGN KEY (head_commit_id) REFERENCES model_commits(commit_id) ON DELETE SET NULL;
+
+-- 资源协作者：私有资源的共享授权（read 仅查看/引用，write 可推版本/提交）
+CREATE TABLE IF NOT EXISTS resource_collaborators (
+    resource_type VARCHAR(10) NOT NULL CHECK (resource_type IN ('model', 'dataset')),
+    resource_id   INTEGER NOT NULL,
+    user_id       INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    permission    VARCHAR(10) NOT NULL CHECK (permission IN ('read', 'write')),
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (resource_type, resource_id, user_id)
+);
 
 CREATE TABLE IF NOT EXISTS trainings (
     training_id SERIAL PRIMARY KEY,
@@ -246,49 +267,8 @@ ALTER TABLE trainings
     ADD CONSTRAINT fk_training_checkpoint_weight
     FOREIGN KEY (checkpoint_weight_id) REFERENCES training_weights(weight_id) ON DELETE SET NULL;
 
--- 取每个数据集的第一个版本的提交者作为创建者
-CREATE OR REPLACE VIEW datasets_with_creator AS
-SELECT
-    d.*,
-    dv.created_by AS creator,
-    dv.created_at AS first_version_time
-FROM datasets d
-LEFT JOIN (
-    SELECT DISTINCT ON (dataset_id)
-        dataset_id,
-        created_by,
-        created_at
-    FROM dataset_versions
-    ORDER BY dataset_id, version_id ASC
-) dv ON d.dataset_id = dv.dataset_id
-LEFT JOIN users u ON dv.created_by = u.user_id;
-
--- 取每个模型的根提交的 author 作为创建者
-CREATE OR REPLACE VIEW models_with_creator AS
-SELECT
-    m.*,
-    mc.author AS creator,
-    mc.created_at AS first_commit_time
-FROM models m
-LEFT JOIN LATERAL (
-    SELECT author, created_at
-    FROM model_commits mc
-    WHERE mc.model_id = m.model_id
-      AND NOT EXISTS (
-          -- 没有作为 commit_id 出现在 commit_parents 中，即为根提交
-          SELECT 1 FROM commit_parents cp WHERE cp.commit_id = mc.commit_id
-      )
-    ORDER BY mc.commit_id ASC
-    LIMIT 1
-) mc ON true
-LEFT JOIN users u ON mc.author = u.user_id;
-
-CREATE OR REPLACE VIEW trainings_with_creator AS
-SELECT
-    t.*,
-    created_by AS creator
-FROM trainings t
-LEFT JOIN users u ON t.created_by = u.user_id;
+-- 所有权统一由 owner_id 列承载（datasets/models），trainings 使用 created_by 列。
+-- 旧的 *_with_creator 视图（从首个 version/commit 推断创建者）已随 owner_id 落地而废弃删除。
 
 -- 数据集贡献数触发器函数
 CREATE OR REPLACE FUNCTION update_dataset_contributions()
@@ -371,30 +351,39 @@ RETURNS BOOLEAN AS $$
 DECLARE
     v_user_role VARCHAR(20);
     v_is_public BOOLEAN;
-    v_is_creator BOOLEAN; 
+    v_is_owner BOOLEAN;
+    v_is_collaborator BOOLEAN;
 BEGIN
     -- 获取用户角色
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
-    
+
     -- 管理员可以访问所有资源
     IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
-    
-    -- 获取数据集可见性和创建者信息
-    SELECT 
+
+    -- 获取数据集可见性和所有权
+    SELECT
         d.visibility = 'public',
-        EXISTS(
-            SELECT 1 FROM dataset_versions dv 
-            WHERE dv.dataset_id = p_dataset_id AND dv.created_by = p_user_id
-            LIMIT 1
-        )
-    INTO v_is_public, v_is_creator
+        d.owner_id = p_user_id
+    INTO v_is_public, v_is_owner
     FROM datasets d
     WHERE d.dataset_id = p_dataset_id;
-    
-    -- 公共数据集或创建者可以访问
-    RETURN v_is_public OR v_is_creator;
+
+    -- 公共数据集或所有者可访问
+    IF v_is_public OR v_is_owner THEN
+        RETURN TRUE;
+    END IF;
+
+    -- 协作者（read 或 write）可访问
+    SELECT EXISTS(
+        SELECT 1 FROM resource_collaborators rc
+        WHERE rc.resource_type = 'dataset'
+          AND rc.resource_id = p_dataset_id
+          AND rc.user_id = p_user_id
+    ) INTO v_is_collaborator;
+
+    RETURN v_is_collaborator;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -404,30 +393,39 @@ RETURNS BOOLEAN AS $$
 DECLARE
     v_user_role VARCHAR(20);
     v_is_public BOOLEAN;
-    v_is_creator BOOLEAN;
+    v_is_owner BOOLEAN;
+    v_is_collaborator BOOLEAN;
 BEGIN
     -- 获取用户角色
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
-    
+
     -- 管理员可以访问所有资源
     IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
-    
-    -- 获取模型可见性和创建者信息
-    SELECT 
+
+    -- 获取模型可见性和所有权
+    SELECT
         m.visibility = 'public',
-        EXISTS(
-            SELECT 1 FROM model_commits mc 
-            WHERE mc.model_id = p_model_id AND mc.author = p_user_id
-            LIMIT 1
-        )
-    INTO v_is_public, v_is_creator
+        m.owner_id = p_user_id
+    INTO v_is_public, v_is_owner
     FROM models m
     WHERE m.model_id = p_model_id;
-    
-    -- 公共模型或创建者可以访问
-    RETURN v_is_public OR v_is_creator;
+
+    -- 公共模型或所有者可访问
+    IF v_is_public OR v_is_owner THEN
+        RETURN TRUE;
+    END IF;
+
+    -- 协作者（read 或 write）可访问
+    SELECT EXISTS(
+        SELECT 1 FROM resource_collaborators rc
+        WHERE rc.resource_type = 'model'
+          AND rc.resource_id = p_model_id
+          AND rc.user_id = p_user_id
+    ) INTO v_is_collaborator;
+
+    RETURN v_is_collaborator;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -441,26 +439,26 @@ DECLARE
 BEGIN
     -- 获取用户角色
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
-    
+
     -- 管理员可以访问所有资源
     IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
-    
-    -- 获取训练任务可见性和创建者信息
-    SELECT 
+
+    -- 获取训练任务可见性和创建者信息（trainings.created_by 即所有者，语义不变）
+    SELECT
         t.visibility = 'public',
         t.created_by = p_user_id
     INTO v_is_public, v_is_creator
     FROM trainings t
     WHERE t.training_id = p_training_id;
-    
+
     -- 公共训练或创建者可以访问
     RETURN v_is_public OR v_is_creator;
 END;
 $$ LANGUAGE plpgsql;
 
--- 检查用户是否有权修改资源（需要所有者或管理员权限）
+-- 检查用户是否有权修改数据集（owner、write 协作者或管理员）
 CREATE OR REPLACE FUNCTION can_modify_dataset(p_user_id INTEGER, p_dataset_id INTEGER)
 RETURNS BOOLEAN AS $$
 DECLARE
@@ -468,27 +466,37 @@ DECLARE
 BEGIN
     -- 获取用户角色
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
-    
+
     -- 管理员可以修改所有资源
     IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
-    
+
     -- 访客不能修改任何资源
     IF v_user_role = 'guest' THEN
         RETURN FALSE;
     END IF;
-    
-    -- 检查是否是创建者
+
+    -- 所有者可修改
+    IF EXISTS(
+        SELECT 1 FROM datasets d
+        WHERE d.dataset_id = p_dataset_id AND d.owner_id = p_user_id
+    ) THEN
+        RETURN TRUE;
+    END IF;
+
+    -- write 协作者可修改（推版本等写操作）
     RETURN EXISTS(
-        SELECT 1 FROM dataset_versions dv 
-        WHERE dv.dataset_id = p_dataset_id AND dv.created_by = p_user_id
-        LIMIT 1
+        SELECT 1 FROM resource_collaborators rc
+        WHERE rc.resource_type = 'dataset'
+          AND rc.resource_id = p_dataset_id
+          AND rc.user_id = p_user_id
+          AND rc.permission = 'write'
     );
 END;
 $$ LANGUAGE plpgsql;
 
--- 检查用户是否有权修改模型
+-- 检查用户是否有权修改模型（owner、write 协作者或管理员）
 CREATE OR REPLACE FUNCTION can_modify_model(p_user_id INTEGER, p_model_id INTEGER)
 RETURNS BOOLEAN AS $$
 DECLARE
@@ -496,27 +504,37 @@ DECLARE
 BEGIN
     -- 获取用户角色
     SELECT role INTO v_user_role FROM users WHERE user_id = p_user_id;
-    
+
     -- 管理员可以修改所有资源
     IF v_user_role IN ('admin', 'root') THEN
         RETURN TRUE;
     END IF;
-    
+
     -- 访客不能修改任何资源
     IF v_user_role = 'guest' THEN
         RETURN FALSE;
     END IF;
-    
-    -- 检查是否是作者
+
+    -- 所有者可修改
+    IF EXISTS(
+        SELECT 1 FROM models m
+        WHERE m.model_id = p_model_id AND m.owner_id = p_user_id
+    ) THEN
+        RETURN TRUE;
+    END IF;
+
+    -- write 协作者可修改（推 commit、建分支等写操作）
     RETURN EXISTS(
-        SELECT 1 FROM model_commits mc 
-        WHERE mc.model_id = p_model_id AND mc.author = p_user_id
-        LIMIT 1
+        SELECT 1 FROM resource_collaborators rc
+        WHERE rc.resource_type = 'model'
+          AND rc.resource_id = p_model_id
+          AND rc.user_id = p_user_id
+          AND rc.permission = 'write'
     );
 END;
 $$ LANGUAGE plpgsql;
 
--- 检查用户是否有权修改训练任务
+-- 检查用户是否有权修改训练任务（仅创建者或管理员；训练任务无协作者概念）
 CREATE OR REPLACE FUNCTION can_modify_training(p_user_id INTEGER, p_training_id INTEGER)
 RETURNS BOOLEAN AS $$
 DECLARE

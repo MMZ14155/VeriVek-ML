@@ -32,7 +32,7 @@ class DatasetImporter:
             cumulative_rows_before = existing["total_rows"]
             existing_total_size = existing["total_size_bytes"]
         else:
-            dataset_id = self.repo.create_dataset(dataset_name, description, format, tags, visibility)
+            dataset_id = self.repo.create_dataset(dataset_name, description, format, tags, visibility, owner_id=created_by)
             parent_version_id = None
             cumulative_rows_before = 0
             existing_total_size = 0
